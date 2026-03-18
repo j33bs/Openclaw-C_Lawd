@@ -1,0 +1,8 @@
+interbeing_contract/README.md
+interbeing_contract/submit_task_v0.py
+interbeing_contract/test_submit_task_v0.py
+scripts/dev/test_emit_dali_handoff.py
+workspace/audit/_evidence/clawd-handoff-schema-version/changed-files.txt
+workspace/audit/_evidence/clawd-handoff-schema-version/git-status.txt
+workspace/audit/_evidence/clawd-handoff-schema-version/rollback-notes.md
+workspace/audit/_evidence/clawd-handoff-schema-version/schema-version-fix-smoke.md

@@ -1,0 +1,7 @@
+## codex/feat/clawd-handoff-workflow
+ M interbeing_contract/README.md
+ M interbeing_contract/test_submit_task_v0.py
+?? handoff/
+?? scripts/dev/emit_dali_handoff.py
+?? scripts/dev/test_emit_dali_handoff.py
+?? workspace/audit/_evidence/clawd-handoff-workflow/

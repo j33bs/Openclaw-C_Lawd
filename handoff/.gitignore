@@ -1,0 +1,3 @@
+# Ignore emitted handoff envelopes while keeping the directory structure tracked.
+outgoing/*/*.json
+archive/*/*.json

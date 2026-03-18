@@ -1,0 +1,6 @@
+## codex/fix/clawd-handoff-schema-version
+ M interbeing_contract/README.md
+ M interbeing_contract/submit_task_v0.py
+ M interbeing_contract/test_submit_task_v0.py
+ M scripts/dev/test_emit_dali_handoff.py
+?? workspace/audit/_evidence/clawd-handoff-schema-version/
