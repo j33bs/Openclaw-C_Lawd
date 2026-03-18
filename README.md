@@ -3,7 +3,7 @@ Derived from:
 - https://github.com/j33bs/openclaw-dali (reference fork)
 
 Role:
-Operator / orchestration node within the OpenClaw ecosystem.
+Personal and research assistant with light coordination/delegation within the OpenClaw ecosystem.
 
 # 🦞 OpenClaw — Personal AI Assistant
 
@@ -29,6 +29,10 @@ Operator / orchestration node within the OpenClaw ecosystem.
 It answers you on the channels you already use (WhatsApp, Telegram, Slack, Discord, Google Chat, Signal, iMessage, BlueBubbles, IRC, Microsoft Teams, Matrix, Feishu, LINE, Mattermost, Nextcloud Talk, Nostr, Synology Chat, Tlon, Twitch, Zalo, Zalo Personal, WebChat). It can speak and listen on macOS/iOS/Android, and can render a live Canvas you control. The Gateway is just the control plane — the product is the assistant.
 
 If you want a personal, single-user assistant that feels local, fast, and always-on, this is it.
+
+## C_Lawd Downstream
+
+C_Lawd is the personal and research assistant downstream of OpenClaw in this repository. Upstream OpenClaw remains the base platform and direct tracking source; this repo carries the C_Lawd-specific role, governance, and boundary posture. Dali is a sibling downstream/reference repo for heavier execution and substrate-specific orchestration, with coordination intended to happen through an explicit inter-being boundary rather than hidden shared ownership.
 
 [Website](https://openclaw.ai) · [Docs](https://docs.openclaw.ai) · [Vision](VISION.md) · [DeepWiki](https://deepwiki.com/openclaw/openclaw) · [Getting Started](https://docs.openclaw.ai/start/getting-started) · [Updating](https://docs.openclaw.ai/install/updating) · [Showcase](https://docs.openclaw.ai/start/showcase) · [FAQ](https://docs.openclaw.ai/help/faq) · [Onboarding](https://docs.openclaw.ai/start/wizard) · [Nix](https://github.com/openclaw/nix-openclaw) · [Docker](https://docs.openclaw.ai/install/docker) · [Discord](https://discord.gg/clawd)
 
@@ -329,10 +333,12 @@ Minimal `~/.openclaw/openclaw.json` (model + defaults):
 ```json5
 {
   agent: {
-    model: "anthropic/claude-opus-4-6",
+    model: "openai/gpt-4o-mini",
   },
 }
 ```
+
+Downstream posture for C_Lawd: keep the default model user-facing and lightweight for daily interaction, and treat heavier execution, large ingestion, or substrate-specific work as explicit delegation across the inter-being boundary rather than a hidden local default.
 
 [Full configuration reference (all keys + examples).](https://docs.openclaw.ai/gateway/configuration)
 

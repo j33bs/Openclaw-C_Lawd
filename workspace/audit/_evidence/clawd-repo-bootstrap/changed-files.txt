@@ -1,0 +1,11 @@
+README.md
+ARCHITECTURE.md
+ROLE.md
+UPSTREAM.md
+interbeing_contract/README.md
+workspace/audit/_evidence/clawd-repo-bootstrap/audit-summary.md
+workspace/audit/_evidence/clawd-repo-bootstrap/changed-files.txt
+workspace/audit/_evidence/clawd-repo-bootstrap/git-branch-vv.txt
+workspace/audit/_evidence/clawd-repo-bootstrap/git-remote-v.txt
+workspace/audit/_evidence/clawd-repo-bootstrap/git-status.txt
+workspace/audit/_evidence/clawd-repo-bootstrap/rollback-notes.md
