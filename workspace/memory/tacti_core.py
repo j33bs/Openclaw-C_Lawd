@@ -4,25 +4,43 @@ TACTI Core - Unified Memory and State Management
 Integrates all TACTI modules into a cohesive system.
 """
 import sys
+from importlib import import_module
 from pathlib import Path
 
-# Compatibility note: this module still expects class-shaped tracker adapters
-# from sibling files. Keep local import paths stable until those interfaces
-# are extracted or shimmed for a future move.
-# Add to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Compatibility note: this module still expects class-shaped tracker adapters.
+# Resolve them lazily so package imports remain stable while those interfaces
+# are isolated or shimmed for a future move.
 
-from relationship_tracker import RelationshipTracker
-from arousal_tracker import ArousalTracker
-from pattern_chunker import PatternChunker
+
+def _import_memory_module(module_name: str):
+    if __package__:
+        return import_module(f"{__package__}.{module_name}")
+    module_dir = str(Path(__file__).parent)
+    if module_dir not in sys.path:  # pragma: no cover - direct script compatibility
+        sys.path.insert(0, module_dir)
+    return import_module(module_name)
+
+
+def _resolve_local_symbol(module_name: str, symbol_name: str):
+    module = _import_memory_module(module_name)
+    symbol = getattr(module, symbol_name, None)
+    if symbol is None:
+        raise ImportError(
+            f"{Path(__file__).name} requires {symbol_name} to remain available from "
+            f"{module_name}.py until the tracker adapter contract is extracted."
+        )
+    return symbol
 
 class TacticCore:
     """Unified interface for TACTI state management."""
     
     def __init__(self):
-        self.relationship = RelationshipTracker()
-        self.arousal = ArousalTracker()
-        self.chunker = PatternChunker()
+        relationship_cls = _resolve_local_symbol("relationship_tracker", "RelationshipTracker")
+        arousal_cls = _resolve_local_symbol("arousal_tracker", "ArousalTracker")
+        pattern_chunker_cls = _resolve_local_symbol("pattern_chunker", "PatternChunker")
+        self.relationship = relationship_cls()
+        self.arousal = arousal_cls()
+        self.chunker = pattern_chunker_cls()
     
     # === RELATIONSHIP ===
     

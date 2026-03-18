@@ -48,4 +48,7 @@ This subtree now has an explicit boundary classification, but it was not physica
 
 - Keep current paths stable.
 - Use this file and the linked evidence bundle as the source of truth for the boundary until callers and path literals are made movable.
-- Shared-engine candidates now prefer helper-based path resolution where it was low-risk to do so, but file placement and unresolved import contracts remain unchanged.
+- Shared-engine candidates now prefer helper-based path resolution where it was low-risk to do so.
+- `tacti_core.py` now resolves sibling modules lazily so package imports do not depend on the current file layout at import time, but the class-shaped tracker adapter contract still blocks physical extraction.
+- `message_hooks.py` and `session_handshake.py` now support both package-relative and local-script imports; `session_handshake.py` also prefers root identity docs with a workspace fallback for compatibility.
+- `unified_query.js` still has broader repo-wide adapters, but those defaults are now explicit compatibility defaults instead of hidden path literals.

@@ -4,6 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const CURRENT_RELATIVE_ENTRYPOINT = path.join('workspace', 'memory', 'unified_query.js');
+const COMPATIBILITY_DEFAULT_SOURCE_PATHS = Object.freeze({
+  governance: ['governance', 'OPEN_QUESTIONS.md'],
+  vector: ['knowledge_base', 'data', 'entities.jsonl'],
+  profile: ['profile', 'user_memory.jsonl']
+});
 
 function resolveRepoRoot(startDir) {
   let current = path.resolve(startDir || process.cwd());
@@ -18,6 +23,11 @@ function resolveRepoRoot(startDir) {
 
 function resolveWorkspacePath(repoRoot, ...parts) {
   return path.join(repoRoot, 'workspace', ...parts);
+}
+
+function resolveCompatibilityWorkspacePath(repoRoot, explicitPath, relativeParts) {
+  if (explicitPath) return explicitPath;
+  return resolveWorkspacePath(repoRoot, ...relativeParts);
 }
 
 function toArray(value) {
@@ -82,7 +92,11 @@ function makeCorrespondenceStoreAdapter(opts = {}) {
 function makeGovernanceLogAdapter(opts = {}) {
   const id = 'governance_log';
   const repoRoot = resolveRepoRoot(opts.repoRoot || process.cwd());
-  const logPath = opts.path || resolveWorkspacePath(repoRoot, 'governance', 'OPEN_QUESTIONS.md');
+  const logPath = resolveCompatibilityWorkspacePath(
+    repoRoot,
+    opts.path,
+    COMPATIBILITY_DEFAULT_SOURCE_PATHS.governance
+  );
 
   return {
     id,
@@ -120,7 +134,11 @@ function makeGovernanceLogAdapter(opts = {}) {
 function makeVectorStoreAdapter(opts = {}) {
   const id = 'vector_store';
   const repoRoot = resolveRepoRoot(opts.repoRoot || process.cwd());
-  const jsonlPath = opts.path || resolveWorkspacePath(repoRoot, 'knowledge_base', 'data', 'entities.jsonl');
+  const jsonlPath = resolveCompatibilityWorkspacePath(
+    repoRoot,
+    opts.path,
+    COMPATIBILITY_DEFAULT_SOURCE_PATHS.vector
+  );
 
   return {
     id,
@@ -155,7 +173,11 @@ function makeVectorStoreAdapter(opts = {}) {
 function makeUserProfileAdapter(opts = {}) {
   const id = 'user_profile';
   const repoRoot = resolveRepoRoot(opts.repoRoot || process.cwd());
-  const jsonlPath = opts.path || resolveWorkspacePath(repoRoot, 'profile', 'user_memory.jsonl');
+  const jsonlPath = resolveCompatibilityWorkspacePath(
+    repoRoot,
+    opts.path,
+    COMPATIBILITY_DEFAULT_SOURCE_PATHS.profile
+  );
 
   return {
     id,

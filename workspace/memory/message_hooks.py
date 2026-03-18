@@ -5,8 +5,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .arousal_tracker import update_from_event as update_arousal
-from .relationship_tracker import update_from_event as update_relationship
+if __package__:
+    from .arousal_tracker import update_from_event as update_arousal
+    from .relationship_tracker import update_from_event as update_relationship
+else:  # pragma: no cover - script/local import compatibility
+    from arousal_tracker import update_from_event as update_arousal
+    from relationship_tracker import update_from_event as update_relationship
 
 
 def _utc_now() -> str:

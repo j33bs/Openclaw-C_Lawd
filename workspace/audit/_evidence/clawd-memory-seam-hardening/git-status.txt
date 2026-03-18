@@ -1,0 +1,11 @@
+## codex/refactor/clawd-memory-seam-hardening
+ M workspace/memory/BOUNDARY.md
+ M workspace/memory/message_hooks.py
+ M workspace/memory/paths.py
+ M workspace/memory/session_handshake.py
+ M workspace/memory/tacti_core.py
+ M workspace/memory/unified_query.js
+?? workspace/audit/_evidence/clawd-memory-seam-hardening/changed-files.txt
+?? workspace/audit/_evidence/clawd-memory-seam-hardening/git-status.txt
+?? workspace/audit/_evidence/clawd-memory-seam-hardening/rollback-notes.md
+?? workspace/audit/_evidence/clawd-memory-seam-hardening/seam-hardening-audit.md

@@ -6,8 +6,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .relationship_tracker import load_state as load_relationship_state
-from .relationship_tracker import record_session_close, record_session_open
+if __package__:
+    from .paths import (
+        resolve_identity_doc_path,
+        resolve_state_runtime_memory_path,
+        resolve_workspace_path,
+    )
+    from .relationship_tracker import load_state as load_relationship_state
+    from .relationship_tracker import record_session_close, record_session_open
+else:  # pragma: no cover - script/local import compatibility
+    from paths import resolve_identity_doc_path, resolve_state_runtime_memory_path, resolve_workspace_path
+    from relationship_tracker import load_state as load_relationship_state
+    from relationship_tracker import record_session_close, record_session_open
 
 try:
     from tacti.events import emit as tacti_emit
@@ -29,7 +39,7 @@ def _hash_file(path: Path) -> str:
 
 
 def _resolve_handshake_dir(repo_root: Path | str) -> Path:
-    return Path(repo_root) / "workspace" / "state_runtime" / "memory" / "handshakes"
+    return resolve_state_runtime_memory_path("handshakes", repo_root=repo_root)
 
 
 def _path_ref(path: Path, root: Path) -> str:
@@ -52,11 +62,10 @@ def _latest_summary_path(summary_file: Path) -> Path | None:
 
 
 def _identity_snapshot(root: Path) -> dict[str, Any]:
-    workspace_root = root / "workspace"
     snapshot: dict[str, Any] = {}
     soul_text = ""
     for name in ("SOUL.md", "USER.md", "MEMORY.md"):
-        path = workspace_root / name
+        path = resolve_identity_doc_path(name, repo_root=root)
         key = name.lower().replace(".md", "")
         snapshot[key] = {
             "ref": _path_ref(path, root),
@@ -79,12 +88,17 @@ def _orientation_snapshot(root: Path) -> dict[str, Any]:
         orientation = build_orientation(
             author="c_lawd",
             verify=True,
-            workspace_root=root / "workspace",
+            workspace_root=resolve_workspace_path(repo_root=root),
         )
         orientation["command"] = 'python3 workspace/store/orient.py --author "c_lawd" --verify'
         return orientation
     except Exception:
         return {}
+
+
+def _emit_session_event(event_name: str, payload: dict[str, Any], *, session_id: str) -> None:
+    if callable(tacti_emit):
+        tacti_emit(event_name, payload, session_id=str(session_id))
 
 
 def load_session_handshake(
@@ -133,8 +147,7 @@ def load_session_handshake(
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact = out_dir / f"{session_id}_open.json"
     artifact.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
-    if callable(tacti_emit):
-        tacti_emit("tacti_cr.session.handshake_loaded", payload, session_id=str(session_id))
+    _emit_session_event("tacti_cr.session.handshake_loaded", payload, session_id=str(session_id))
     payload["artifact_path"] = str(artifact)
     return payload
 
@@ -180,8 +193,7 @@ def close_session_handshake(
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact = out_dir / f"{session_id}_close.json"
     artifact.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
-    if callable(tacti_emit):
-        tacti_emit("tacti_cr.session.session_closed", payload, session_id=str(session_id))
+    _emit_session_event("tacti_cr.session.session_closed", payload, session_id=str(session_id))
     payload["artifact_path"] = str(artifact)
     return payload
 
