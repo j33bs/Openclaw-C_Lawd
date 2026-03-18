@@ -6,6 +6,9 @@ Integrates all TACTI modules into a cohesive system.
 import sys
 from pathlib import Path
 
+# Compatibility note: this module still expects class-shaped tracker adapters
+# from sibling files. Keep local import paths stable until those interfaces
+# are extracted or shimmed for a future move.
 # Add to path
 sys.path.insert(0, str(Path(__file__).parent))
 

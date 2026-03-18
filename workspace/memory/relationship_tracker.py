@@ -4,13 +4,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-DEFAULT_STATE_PATH = Path("workspace/state_runtime/memory/relationship_state.json")
+if __package__:
+    from .paths import resolve_repo_relative, resolve_state_runtime_memory_path
+else:  # pragma: no cover - script/local import compatibility
+    from paths import resolve_repo_relative, resolve_state_runtime_memory_path
+
+DEFAULT_STATE_PATH = resolve_state_runtime_memory_path("relationship_state.json")
 
 
 def _resolve_path(repo_root: Path | str, state_path: Path | None = None) -> Path:
-    root = Path(repo_root)
     target = Path(state_path) if state_path is not None else DEFAULT_STATE_PATH
-    return target if target.is_absolute() else (root / target)
+    return resolve_repo_relative(target, repo_root=repo_root)
 
 
 def _default_state() -> dict[str, Any]:

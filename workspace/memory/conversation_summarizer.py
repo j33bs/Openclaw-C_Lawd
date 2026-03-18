@@ -8,9 +8,15 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import Counter
 
+if __package__:
+    from .paths import resolve_memory_archive_path
+else:  # pragma: no cover - script/local import compatibility
+    from paths import resolve_memory_archive_path
+
 class ConversationSummarizer:
-    def __init__(self, memory_dir="memory/"):
-        self.memory_dir = Path(memory_dir)
+    def __init__(self, memory_dir=None, *, repo_root=None):
+        default_dir = resolve_memory_archive_path(repo_root=repo_root)
+        self.memory_dir = Path(memory_dir) if memory_dir is not None else default_dir
     
     def extract_topics(self, days=7):
         """Extract common topics from recent memory."""

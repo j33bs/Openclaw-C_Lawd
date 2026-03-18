@@ -3,6 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const CURRENT_RELATIVE_ENTRYPOINT = path.join('workspace', 'memory', 'unified_query.js');
+
 function resolveRepoRoot(startDir) {
   let current = path.resolve(startDir || process.cwd());
   for (let i = 0; i < 8; i += 1) {
@@ -12,6 +14,10 @@ function resolveRepoRoot(startDir) {
     current = parent;
   }
   return path.resolve(startDir || process.cwd());
+}
+
+function resolveWorkspacePath(repoRoot, ...parts) {
+  return path.join(repoRoot, 'workspace', ...parts);
 }
 
 function toArray(value) {
@@ -76,7 +82,7 @@ function makeCorrespondenceStoreAdapter(opts = {}) {
 function makeGovernanceLogAdapter(opts = {}) {
   const id = 'governance_log';
   const repoRoot = resolveRepoRoot(opts.repoRoot || process.cwd());
-  const logPath = opts.path || path.join(repoRoot, 'workspace', 'governance', 'OPEN_QUESTIONS.md');
+  const logPath = opts.path || resolveWorkspacePath(repoRoot, 'governance', 'OPEN_QUESTIONS.md');
 
   return {
     id,
@@ -114,7 +120,7 @@ function makeGovernanceLogAdapter(opts = {}) {
 function makeVectorStoreAdapter(opts = {}) {
   const id = 'vector_store';
   const repoRoot = resolveRepoRoot(opts.repoRoot || process.cwd());
-  const jsonlPath = opts.path || path.join(repoRoot, 'workspace', 'knowledge_base', 'data', 'entities.jsonl');
+  const jsonlPath = opts.path || resolveWorkspacePath(repoRoot, 'knowledge_base', 'data', 'entities.jsonl');
 
   return {
     id,
@@ -149,7 +155,7 @@ function makeVectorStoreAdapter(opts = {}) {
 function makeUserProfileAdapter(opts = {}) {
   const id = 'user_profile';
   const repoRoot = resolveRepoRoot(opts.repoRoot || process.cwd());
-  const jsonlPath = opts.path || path.join(repoRoot, 'workspace', 'profile', 'user_memory.jsonl');
+  const jsonlPath = opts.path || resolveWorkspacePath(repoRoot, 'profile', 'user_memory.jsonl');
 
   return {
     id,
@@ -269,7 +275,7 @@ if (require.main === module) {
   const baseUrl = process.env.CORRESPONDENCE_STORE_BASE_URL || 'http://127.0.0.1:8765';
 
   if (!query) {
-    process.stderr.write('Usage: node workspace/memory/unified_query.js --q <query> [--limit N]\n');
+    process.stderr.write(`Usage: node ${CURRENT_RELATIVE_ENTRYPOINT} --q <query> [--limit N]\n`);
     process.exit(1);
   }
 

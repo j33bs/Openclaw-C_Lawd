@@ -9,10 +9,17 @@ from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
+if __package__:
+    from .paths import resolve_memory_archive_path, resolve_workspace_memory_path
+else:  # pragma: no cover - script/local import compatibility
+    from paths import resolve_memory_archive_path, resolve_workspace_memory_path
+
 class PatternChunker:
-    def __init__(self, memory_dir="memory/", shortcuts_path="workspace/memory/shortcuts.json"):
-        self.memory_dir = Path(memory_dir)
-        self.shortcuts_path = Path(shortcuts_path)
+    def __init__(self, memory_dir=None, shortcuts_path=None, *, repo_root=None):
+        default_memory_dir = resolve_memory_archive_path(repo_root=repo_root)
+        default_shortcuts_path = resolve_workspace_memory_path("shortcuts.json", repo_root=repo_root)
+        self.memory_dir = Path(memory_dir) if memory_dir is not None else default_memory_dir
+        self.shortcuts_path = Path(shortcuts_path) if shortcuts_path is not None else default_shortcuts_path
         self.shortcuts = self._load_shortcuts()
     
     def _load_shortcuts(self):

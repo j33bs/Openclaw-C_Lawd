@@ -1,0 +1,15 @@
+MEMORY.md
+workspace/memory/BOUNDARY.md
+workspace/memory/arousal_tracker.py
+workspace/memory/context_compactor.py
+workspace/memory/conversation_summarizer.py
+workspace/memory/event_notifier.py
+workspace/memory/pattern_chunker.py
+workspace/memory/relationship_tracker.py
+workspace/memory/tacti_core.py
+workspace/memory/unified_query.js
+workspace/audit/_evidence/clawd-memory-decoupling/changed-files.txt
+workspace/audit/_evidence/clawd-memory-decoupling/decoupling-audit.md
+workspace/audit/_evidence/clawd-memory-decoupling/git-status.txt
+workspace/audit/_evidence/clawd-memory-decoupling/rollback-notes.md
+workspace/memory/paths.py

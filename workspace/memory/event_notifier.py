@@ -7,9 +7,15 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+if __package__:
+    from .paths import resolve_workspace_memory_path
+else:  # pragma: no cover - script/local import compatibility
+    from paths import resolve_workspace_memory_path
+
 class EventNotifier:
-    def __init__(self, path="workspace/memory/events.json"):
-        self.path = Path(path)
+    def __init__(self, path=None, *, repo_root=None):
+        default_path = resolve_workspace_memory_path("events.json", repo_root=repo_root)
+        self.path = Path(path) if path is not None else default_path
         self.events = self._load()
     
     def _load(self):

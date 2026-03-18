@@ -48,3 +48,4 @@ This subtree now has an explicit boundary classification, but it was not physica
 
 - Keep current paths stable.
 - Use this file and the linked evidence bundle as the source of truth for the boundary until callers and path literals are made movable.
+- Shared-engine candidates now prefer helper-based path resolution where it was low-risk to do so, but file placement and unresolved import contracts remain unchanged.

@@ -7,9 +7,15 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+if __package__:
+    from .paths import resolve_workspace_memory_path
+else:  # pragma: no cover - script/local import compatibility
+    from paths import resolve_workspace_memory_path
+
 class ContextCompactor:
-    def __init__(self, arousal_tracker_path="workspace/memory/arousal_state.json"):
-        self.arousal_path = Path(arousal_tracker_path)
+    def __init__(self, arousal_tracker_path=None, *, repo_root=None):
+        default_path = resolve_workspace_memory_path("arousal_state.json", repo_root=repo_root)
+        self.arousal_path = Path(arousal_tracker_path) if arousal_tracker_path is not None else default_path
         self.threshold_tokens = 8000  # Compact if avg > 8000
     
     def should_compact(self):
