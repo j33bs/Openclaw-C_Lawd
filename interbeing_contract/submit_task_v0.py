@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 from uuid import uuid4
 
-DEFAULT_SCHEMA_VERSION = "task-envelope.v0"
+DEFAULT_SCHEMA_VERSION = "v0"
 DEFAULT_OPERATION = "submit_task"
 DEFAULT_FILENAME = "task-envelope.v0.json"
 DEFAULT_SCHEMA_ENV_VAR = "OPENCLAW_INTERBEING_TASK_ENVELOPE_SCHEMA"
@@ -49,6 +49,8 @@ def _validate_submit_task_envelope_practical(envelope: Mapping[str, Any]) -> dic
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{field_name} must be a non-empty string")
 
+    if normalized.get("schema_version") != DEFAULT_SCHEMA_VERSION:
+        raise ValueError(f"schema_version must be {DEFAULT_SCHEMA_VERSION!r}")
     if normalized.get("operation") != DEFAULT_OPERATION:
         raise ValueError(f"operation must be {DEFAULT_OPERATION!r}")
     if not isinstance(normalized.get("payload"), Mapping):

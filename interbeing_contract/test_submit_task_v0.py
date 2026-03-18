@@ -20,6 +20,10 @@ from interbeing_contract.submit_task_v0 import (
 
 
 class SubmitTaskEnvelopeV0Tests(unittest.TestCase):
+    def test_default_schema_version_is_canonical_v0(self) -> None:
+        self.assertEqual(DEFAULT_SCHEMA_VERSION, "v0")
+        self.assertNotEqual(DEFAULT_SCHEMA_VERSION, "task-envelope.v0")
+
     def test_resolve_task_envelope_schema_path_uses_expected_precedence(self) -> None:
         with TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
@@ -104,6 +108,8 @@ class SubmitTaskEnvelopeV0Tests(unittest.TestCase):
         )
 
         self.assertEqual(envelope["schema_version"], DEFAULT_SCHEMA_VERSION)
+        self.assertEqual(envelope["schema_version"], "v0")
+        self.assertNotEqual(envelope["schema_version"], "task-envelope.v0")
         self.assertEqual(envelope["operation"], DEFAULT_OPERATION)
         self.assertEqual(envelope["requestor"], "c_lawd")
         self.assertEqual(envelope["target_node"], "dali")
@@ -127,9 +133,22 @@ class SubmitTaskEnvelopeV0Tests(unittest.TestCase):
             )
             self.assertEqual(written, output_dir / "task-envelope.v0.json")
             payload = json.loads(written.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema_version"], "v0")
             self.assertEqual(payload["task_id"], "task-456")
             self.assertEqual(payload["correlation_id"], "corr-456")
             self.assertEqual(validate_submit_task_envelope_shape(payload), payload)
+
+    def test_legacy_task_envelope_schema_version_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "schema_version must be 'v0'"):
+            build_submit_task_envelope(
+                requestor="c_lawd",
+                target_node="dali",
+                task_id="task-legacy-123",
+                correlation_id="corr-legacy-123",
+                created_at="2026-03-18T00:00:00Z",
+                schema_version="task-envelope.v0",
+                payload={"intent": "delegate"},
+            )
 
     def test_validate_submit_task_envelope_falls_back_when_schema_missing(self) -> None:
         missing_schema = Path("/tmp/nonexistent-task-envelope.v0.json")
