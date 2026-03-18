@@ -25,3 +25,9 @@ This directory holds the placeholder contract for the C_Lawd to Dali boundary. T
 ## Future Home
 
 If this boundary grows beyond placeholder status, the shared ontology and protocol should move to `openclaw-interbeing` rather than being duplicated across downstream repos.
+
+## Local Envelope Emission
+
+- `interbeing_contract/submit_task_v0.py` is a local C_Lawd-side adapter for emitting `submit_task` envelopes only.
+- It builds and writes envelope JSON locally, can validate against a canonical `task-envelope.v0.json` when that schema is available, and supports an explicit handoff path for local file-based consumption.
+- Transport, auth/signing, and Dali-side consumption remain separate and deferred.

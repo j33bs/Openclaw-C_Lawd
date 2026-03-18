@@ -1,0 +1,9 @@
+interbeing_contract/README.md
+interbeing_contract/__init__.py
+interbeing_contract/submit_task_v0.py
+interbeing_contract/test_submit_task_v0.py
+workspace/audit/_evidence/clawd-submit-task-schema-alignment/changed-files.txt
+workspace/audit/_evidence/clawd-submit-task-schema-alignment/git-status.txt
+workspace/audit/_evidence/clawd-submit-task-schema-alignment/handoff/task-envelope.v0.json
+workspace/audit/_evidence/clawd-submit-task-schema-alignment/rollback-notes.md
+workspace/audit/_evidence/clawd-submit-task-schema-alignment/schema-alignment-smoke.md
