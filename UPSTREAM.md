@@ -18,7 +18,7 @@ This repository is a downstream OpenClaw distribution for C_Lawd. It is not a st
 
 - Bootstrap was established on downstream commit `db692cf779fabe1295935b67e1d8f2855d2da92a`.
 - At bootstrap time, downstream `HEAD` matched `dali/main`.
-- After `git fetch --all --prune` on 2026-03-18, `upstream/main` was one commit ahead of this downstream base.
+- After `git fetch --all --prune` on 2026-03-18, `upstream/main` had 8 commits not present in this downstream base, and this downstream base had 1 commit not present in `upstream/main`.
 - That upstream advancement should remain pinned pending validation rather than being fast-forwarded blindly into the downstream.
 
 ## Provenance Discipline

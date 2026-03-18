@@ -14,7 +14,7 @@
 
 ## High-level findings
 
-- Downstream `HEAD` matches `dali/main`; `upstream/main` is one commit ahead after fetch. The current downstream base should remain pinned pending validation.
+- Downstream `HEAD` matches `dali/main`; compared with that pinned base, `upstream/main` has 8 commits not present downstream, and the pinned downstream base has 1 commit not present in `upstream/main`. The current downstream base should remain pinned pending validation.
 - No Dali-branded code references were found under `src/`, `extensions/`, `apps/`, or `package.json`; current coupling risk is architectural rather than name-based.
 - Heavy capability surfaces are present as generic OpenClaw platform features: scheduler/cron, subagent orchestration, vector memory/indexing, LanceDB auto-recall/capture, and optional local-model support.
 - The repo already includes first-class workspace identity/bootstrap primitives (`SOUL.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md`) that fit a C_Lawd-first downstream posture without invasive code changes.
