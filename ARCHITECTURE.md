@@ -35,4 +35,5 @@ C_Lawd is the user-facing downstream assistant on top of the OpenClaw platform. 
 - The manifest-verified C_Lawd-owned roots are `nodes/c_lawd/`, root `IDENTITY.md`, `USER.md`, `SOUL.md`, `MEMORY.md`, root `memory/`, and provisional `workspace/memory/`.
 - Those roots are now present in this downstream repo.
 - The current tree still retains a large upstream/shared platform substrate around them for compatibility and reversibility.
+- `workspace/memory/` now has an explicit in-repo boundary classification in `workspace/memory/BOUNDARY.md`; files were left in place because intra-directory imports and path literals make physical moves risky without follow-on refactor.
 - Hard extraction and foreign-tree cleanup should wait until path-coupled shared components stop assuming monorepo-local `nodes/c_lawd` and `nodes/dali` layouts.
