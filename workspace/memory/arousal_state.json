@@ -1,0 +1,17 @@
+{
+  "current_state": "active",
+  "transitions": [
+    {
+      "from": "idle",
+      "to": "active",
+      "timestamp": "2026-02-21T14:32:01.812797"
+    }
+  ],
+  "metrics": {
+    "avg_tokens_per_message": 4066.6666666666665,
+    "messages_since_reset": 3,
+    "tool_failures": 0,
+    "total_messages": 3
+  },
+  "last_update": "2026-02-21T14:32:01.814037"
+}

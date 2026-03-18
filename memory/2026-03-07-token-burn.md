@@ -1,0 +1,1 @@
+# Token Burn Summary - 2026-03-07\n\nCodexBar Cost (local):\n- Today: — · 25M tokens\n- Last 30 days: — · 1.5B tokens\n\nScript /Users/heathyeager/clawd/tools/run_daily_token_burn_summary.sh not found; treated as no logs.

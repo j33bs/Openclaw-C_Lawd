@@ -1,0 +1,27 @@
+{
+  "created": "2026-02-21",
+  "interactions": [
+    {
+      "timestamp": "2026-02-21T14:31:15.997097",
+      "type": "research_session",
+      "sentiment": 0.8,
+      "resolution": "success"
+    },
+    {
+      "timestamp": "2026-02-21T14:31:15.997813",
+      "type": "daily_briefing",
+      "sentiment": 0.9,
+      "resolution": "success"
+    }
+  ],
+  "trust_score": 1.0,
+  "attunement_score": 0.8500000000000001,
+  "repairs": 0,
+  "checkins": [],
+  "insights": [
+    {
+      "timestamp": "2026-02-21T14:31:15.997618",
+      "insight": "User excited about TACTI-IPNB integration"
+    }
+  ]
+}

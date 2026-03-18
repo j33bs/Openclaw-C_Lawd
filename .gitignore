@@ -138,3 +138,10 @@ docs/superpowers
 
 # local/runtime cache
 .serena/
+
+# C_Lawd downstream canonical roots
+!IDENTITY.md
+!USER.md
+!memory/
+!memory/**
+!nodes/c_lawd/**
