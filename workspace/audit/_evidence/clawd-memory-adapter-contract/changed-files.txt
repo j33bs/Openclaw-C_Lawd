@@ -1,0 +1,7 @@
+workspace/memory/BOUNDARY.md
+workspace/memory/tacti_core.py
+workspace/memory/tracker_adapters.py
+workspace/audit/_evidence/clawd-memory-adapter-contract/adapter-contract-audit.md
+workspace/audit/_evidence/clawd-memory-adapter-contract/changed-files.txt
+workspace/audit/_evidence/clawd-memory-adapter-contract/git-status.txt
+workspace/audit/_evidence/clawd-memory-adapter-contract/rollback-notes.md

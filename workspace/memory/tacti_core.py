@@ -7,9 +7,9 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
-# Compatibility note: this module still expects class-shaped tracker adapters.
-# Resolve them lazily so package imports remain stable while those interfaces
-# are isolated or shimmed for a future move.
+# Compatibility note: this module now depends on the explicit tracker adapter
+# contract in `tracker_adapters.py` rather than implicit class shapes inside the
+# tracker state modules.
 
 
 def _import_memory_module(module_name: str):
@@ -34,13 +34,13 @@ def _resolve_local_symbol(module_name: str, symbol_name: str):
 class TacticCore:
     """Unified interface for TACTI state management."""
     
-    def __init__(self):
-        relationship_cls = _resolve_local_symbol("relationship_tracker", "RelationshipTracker")
-        arousal_cls = _resolve_local_symbol("arousal_tracker", "ArousalTracker")
+    def __init__(self, *, repo_root: Path | str | None = None, session_id: str = "tacti_core"):
+        relationship_cls = _resolve_local_symbol("tracker_adapters", "RelationshipTracker")
+        arousal_cls = _resolve_local_symbol("tracker_adapters", "ArousalTracker")
         pattern_chunker_cls = _resolve_local_symbol("pattern_chunker", "PatternChunker")
-        self.relationship = relationship_cls()
-        self.arousal = arousal_cls()
-        self.chunker = pattern_chunker_cls()
+        self.relationship = relationship_cls(repo_root=repo_root, session_id=session_id)
+        self.arousal = arousal_cls(repo_root=repo_root, session_id=session_id)
+        self.chunker = pattern_chunker_cls(repo_root=repo_root)
     
     # === RELATIONSHIP ===
     
