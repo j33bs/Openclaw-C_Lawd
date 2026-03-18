@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -35,32 +37,41 @@ class SendToDaliV0Tests(unittest.TestCase):
             target = SEND_TO_DALI.resolve_remote_target(
                 remote_host=None,
                 remote_user=None,
+                remote_port=None,
                 remote_path=None,
+                remote_path_source_override=None,
                 repo_root=SCRIPT_PATH.parents[2],
             )
         self.assertEqual(target.host, "dali")
         self.assertEqual(target.intake_path, "handoff/incoming/dali/")
         self.assertIn("discovered ssh alias", target.host_source)
         self.assertEqual(target.scp_target("sample.task-envelope.v0.json"), "dali:handoff/incoming/dali/sample.task-envelope.v0.json")
+        self.assertIsNone(target.port)
+        self.assertEqual(target.port_source, "ssh-default-or-config")
 
     def test_resolve_remote_target_prefers_cli_values(self) -> None:
         target = SEND_TO_DALI.resolve_remote_target(
             remote_host="cli-host",
             remote_user="runner",
+            remote_port=2200,
             remote_path="/srv/handoff/incoming/dali/",
+            remote_path_source_override="cli --remote-dir",
             repo_root=SCRIPT_PATH.parents[2],
         )
         self.assertEqual(target.ssh_target(), "runner@cli-host")
         self.assertEqual(target.intake_path, "/srv/handoff/incoming/dali/")
         self.assertEqual(target.host_source, "cli --remote-host")
-        self.assertEqual(target.path_source, "cli --remote-path")
+        self.assertEqual(target.path_source, "cli --remote-dir")
+        self.assertEqual(target.port, 2200)
+        self.assertEqual(target.port_source, "cli --remote-port")
 
     def test_emit_mode_reuses_existing_emitter_flow(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "emit.task-envelope.v0.json"
+            output_dir = Path(temp_dir) / "emit"
+            stdout = io.StringIO()
             with mock.patch.object(SEND_TO_DALI, "check_remote_intake"), mock.patch.object(
                 SEND_TO_DALI, "transfer_envelope", return_value="dali:handoff/incoming/dali/emit.task-envelope.v0.json"
-            ), mock.patch.object(SEND_TO_DALI, "discover_default_dali_alias", return_value="dali"):
+            ), mock.patch.object(SEND_TO_DALI, "discover_default_dali_alias", return_value="dali"), redirect_stdout(stdout):
                 exit_code = SEND_TO_DALI.main(
                     [
                         "--emit",
@@ -68,14 +79,20 @@ class SendToDaliV0Tests(unittest.TestCase):
                         "Emit then send",
                         "--instructions",
                         "Use the existing emitter flow.",
-                        "--output-path",
-                        str(output_path),
+                        "--event-type",
+                        "task.submitted",
+                        "--output-dir",
+                        str(output_dir),
                         "--dry-run",
                     ]
                 )
             self.assertEqual(exit_code, 0)
-            payload = SEND_TO_DALI.validate_local_envelope_file(output_path)
+            created_files = list(output_dir.glob("*.task-envelope.v0.json"))
+            self.assertEqual(len(created_files), 1)
+            payload = SEND_TO_DALI.validate_local_envelope_file(created_files[0])
             self.assertEqual(payload["schema_version"], "v0")
+            self.assertEqual(payload["payload"]["event_type"], "task.submitted")
+            self.assertIn("sha256=", stdout.getvalue())
 
     def test_validate_local_envelope_file_rejects_missing_path(self) -> None:
         missing = Path("/tmp/nonexistent-send-to-dali-v0.task-envelope.v0.json")
@@ -99,6 +116,47 @@ class SendToDaliV0Tests(unittest.TestCase):
             ), mock.patch.object(SEND_TO_DALI, "discover_default_dali_alias", return_value="dali"):
                 exit_code = SEND_TO_DALI.main(["--file", str(source_path), "--dry-run"])
             self.assertEqual(exit_code, 0)
+
+    def test_check_remote_intake_uses_explicit_remote_port(self) -> None:
+        target = SEND_TO_DALI.RemoteTarget(
+            host="cli-host",
+            user="runner",
+            intake_path="/srv/handoff/incoming/dali/",
+            host_source="cli --remote-host",
+            path_source="cli --remote-dir",
+            port=2200,
+            port_source="cli --remote-port",
+        )
+        with mock.patch.object(SEND_TO_DALI, "_ensure_command_available"), mock.patch.object(
+            SEND_TO_DALI, "run_checked"
+        ) as mocked_run_checked:
+            SEND_TO_DALI.check_remote_intake(target)
+        command = mocked_run_checked.call_args.kwargs.get("command") or mocked_run_checked.call_args.args[0]
+        self.assertIn("-p", command)
+        self.assertIn("2200", command)
+        self.assertIn("runner@cli-host", command)
+
+    def test_transfer_envelope_uses_explicit_remote_port(self) -> None:
+        target = SEND_TO_DALI.RemoteTarget(
+            host="cli-host",
+            user="runner",
+            intake_path="/srv/handoff/incoming/dali/",
+            host_source="cli --remote-host",
+            path_source="cli --remote-dir",
+            port=2200,
+            port_source="cli --remote-port",
+        )
+        with TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "existing.task-envelope.v0.json"
+            source_path.write_text("{}", encoding="utf-8")
+            with mock.patch.object(SEND_TO_DALI, "_ensure_command_available"), mock.patch.object(
+                SEND_TO_DALI, "run_checked"
+            ) as mocked_run_checked:
+                remote_target = SEND_TO_DALI.transfer_envelope(source_path, target=target, dry_run=False)
+        command = mocked_run_checked.call_args.kwargs.get("command") or mocked_run_checked.call_args.args[0]
+        self.assertIn("-P", command)
+        self.assertIn("2200", command)
+        self.assertEqual(remote_target, f"runner@cli-host:/srv/handoff/incoming/dali/{source_path.name}")
 
 
 if __name__ == "__main__":

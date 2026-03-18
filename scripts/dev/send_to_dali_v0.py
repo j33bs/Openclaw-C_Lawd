@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -24,6 +25,7 @@ DEFAULT_REMOTE_PATH = "handoff/incoming/dali/"
 DEFAULT_REMOTE_HOST_ALIAS = "dali"
 ENV_REMOTE_HOST = "OPENCLAW_INTERBEING_DALI_REMOTE_HOST"
 ENV_REMOTE_USER = "OPENCLAW_INTERBEING_DALI_REMOTE_USER"
+ENV_REMOTE_PORT = "OPENCLAW_INTERBEING_DALI_REMOTE_PORT"
 ENV_REMOTE_PATH = "OPENCLAW_INTERBEING_DALI_INTAKE_PATH"
 
 
@@ -34,6 +36,8 @@ class RemoteTarget:
     intake_path: str
     host_source: str
     path_source: str
+    port: int | None = None
+    port_source: str = "ssh-default-or-config"
 
     def ssh_target(self) -> str:
         return f"{self.user}@{self.host}" if self.user else self.host
@@ -41,6 +45,19 @@ class RemoteTarget:
     def scp_target(self, filename: str) -> str:
         remote_dir = self.intake_path.rstrip("/")
         return f"{self.ssh_target()}:{remote_dir}/{filename}"
+
+    def ssh_command_prefix(self) -> list[str]:
+        command = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"]
+        if self.port is not None:
+            command.extend(["-p", str(self.port)])
+        command.append(self.ssh_target())
+        return command
+
+    def scp_command_prefix(self) -> list[str]:
+        command = ["scp", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"]
+        if self.port is not None:
+            command.extend(["-P", str(self.port)])
+        return command
 
 
 def _ensure_command_available(command_name: str) -> str:
@@ -126,11 +143,23 @@ def _assert_safe_remote_path(value: str) -> str:
     return value
 
 
+def _assert_safe_remote_port(value: str | int) -> int:
+    try:
+        port = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("remote port must be an integer between 1 and 65535") from exc
+    if port < 1 or port > 65535:
+        raise ValueError("remote port must be an integer between 1 and 65535")
+    return port
+
+
 def resolve_remote_target(
     *,
     remote_host: str | None,
     remote_user: str | None,
+    remote_port: int | str | None,
     remote_path: str | None,
+    remote_path_source_override: str | None,
     repo_root: Path,
 ) -> RemoteTarget:
     if remote_host:
@@ -157,9 +186,21 @@ def resolve_remote_target(
         env_user, _env_user_source = _first_config_value(ENV_REMOTE_USER, repo_root=repo_root)
         user_value = _assert_safe_remote_user(env_user) if env_user else None
 
+    if remote_port is not None:
+        port_value = _assert_safe_remote_port(remote_port)
+        port_source = "cli --remote-port"
+    else:
+        env_port, env_port_source = _first_config_value(ENV_REMOTE_PORT, repo_root=repo_root)
+        if env_port:
+            port_value = _assert_safe_remote_port(env_port)
+            port_source = env_port_source or ENV_REMOTE_PORT
+        else:
+            port_value = None
+            port_source = "ssh-default-or-config"
+
     if remote_path:
         path_value = _assert_safe_remote_path(remote_path)
-        path_source = "cli --remote-path"
+        path_source = remote_path_source_override or "cli --remote-path"
     else:
         env_path, env_path_source = _first_config_value(ENV_REMOTE_PATH, repo_root=repo_root)
         if env_path:
@@ -175,6 +216,8 @@ def resolve_remote_target(
         intake_path=path_value,
         host_source=host_source,
         path_source=path_source,
+        port=port_value,
+        port_source=port_source,
     )
 
 
@@ -195,11 +238,13 @@ def emit_local_envelope(
     instructions: str,
     requestor: str,
     target_node: str,
+    event_type: str | None,
     payload_json: str | None,
     payload_file: str | None,
     task_id: str | None,
     correlation_id: str | None,
     output_path: str | None,
+    output_dir: str | None,
     schema_path: str | None,
     allow_overwrite: bool,
     archive: bool,
@@ -209,6 +254,16 @@ def emit_local_envelope(
     if not hasattr(emitter, "load_extra_payload") or not hasattr(emitter, "emit_dali_handoff"):
         raise RuntimeError("existing emitter script does not expose the expected helper functions")
     extra_payload = emitter.load_extra_payload(payload_json=payload_json, payload_file=payload_file)
+    if event_type is not None:
+        normalized_event_type = event_type.strip()
+        if not normalized_event_type:
+            raise ValueError("event type must be a non-empty string")
+        existing_event_type = extra_payload.get("event_type")
+        if existing_event_type is not None and existing_event_type != normalized_event_type:
+            raise ValueError(
+                "event_type conflict: payload already defines event_type with a different value"
+            )
+        extra_payload["event_type"] = normalized_event_type
     return emitter.emit_dali_handoff(
         title=title,
         instructions=instructions,
@@ -218,6 +273,7 @@ def emit_local_envelope(
         task_id=task_id,
         correlation_id=correlation_id,
         output_path=output_path,
+        output_dir=output_dir,
         schema_path=schema_path,
         allow_overwrite=allow_overwrite,
         archive=archive,
@@ -259,27 +315,25 @@ def run_checked(command: list[str], *, action: str) -> subprocess.CompletedProce
     return completed
 
 
+def compute_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def check_remote_intake(target: RemoteTarget) -> None:
     _ensure_command_available("ssh")
     try:
         run_checked(
-            [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "StrictHostKeyChecking=yes",
-                target.ssh_target(),
-                "test",
-                "-d",
-                target.intake_path,
-            ],
+            [*target.ssh_command_prefix(), "test", "-d", target.intake_path],
             action=f"remote intake check for {target.ssh_target()}:{target.intake_path}",
         )
     except RuntimeError as exc:
         raise RuntimeError(
             f"remote intake path is unavailable at {target.ssh_target()}:{target.intake_path}; "
-            f"pass --remote-path or set {ENV_REMOTE_PATH} to the exact Dali watcher intake directory. "
+            f"pass --remote-dir or set {ENV_REMOTE_PATH} to the exact Dali watcher intake directory. "
             f"Original error: {exc}"
         ) from exc
 
@@ -290,15 +344,7 @@ def transfer_envelope(source_path: Path, *, target: RemoteTarget, dry_run: bool)
         return remote_target
     _ensure_command_available("scp")
     run_checked(
-        [
-            "scp",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "StrictHostKeyChecking=yes",
-            str(source_path),
-            remote_target,
-        ],
+        [*target.scp_command_prefix(), str(source_path), remote_target],
         action=f"scp transfer to {remote_target}",
     )
     return remote_target
@@ -316,12 +362,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--instructions", help="Task instructions for emit mode.")
     parser.add_argument("--requestor", default="c_lawd", help="Submitting node id for emit mode.")
     parser.add_argument("--target-node", default="dali", help="Target node id for emit mode.")
+    parser.add_argument(
+        "--event-type",
+        help="Optional payload event_type annotation for emit mode. This stays inside payload and does not alter the canonical top-level envelope schema.",
+    )
     payload_group = parser.add_mutually_exclusive_group()
     payload_group.add_argument("--payload-json", help="Additional payload fields as a JSON object string.")
     payload_group.add_argument("--payload-file", help="Path to a JSON file containing additional payload fields.")
     parser.add_argument("--task-id", help="Optional explicit task id for emit mode.")
     parser.add_argument("--correlation-id", help="Optional explicit correlation id for emit mode.")
     parser.add_argument("--output-path", help="Optional explicit local output file path for emit mode.")
+    parser.add_argument("--output-dir", help="Optional explicit local output directory for emit mode.")
     parser.add_argument("--schema-path", help="Optional explicit schema path for local validation.")
     parser.add_argument("--allow-overwrite", action="store_true", help="Allow overwriting an emitted local file.")
     parser.add_argument("--archive", dest="archive", action="store_true", default=True, help="Archive the emitted local file (default).")
@@ -329,7 +380,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--remote-host", help="Remote ssh host or alias.")
     parser.add_argument("--remote-user", help="Optional remote ssh username.")
-    parser.add_argument("--remote-path", help="Remote intake directory. Defaults to handoff/incoming/dali/.")
+    parser.add_argument("--remote-port", type=int, help="Optional remote ssh/scp port. Defaults to ssh config or port 22 behavior.")
+    parser.add_argument("--remote-dir", help="Remote intake directory. Defaults to handoff/incoming/dali/.")
+    parser.add_argument("--remote-path", help=argparse.SUPPRESS)
     parser.add_argument("--dry-run", action="store_true", help="Perform all checks except the actual scp transfer.")
     return parser
 
@@ -339,6 +392,14 @@ def _require_emit_args(parser: argparse.ArgumentParser, args: argparse.Namespace
         parser.error("--title is required with --emit")
     if args.emit and not args.instructions:
         parser.error("--instructions is required with --emit")
+    if args.output_dir and args.output_path:
+        parser.error("--output-dir and --output-path are mutually exclusive")
+    if args.remote_dir and args.remote_path:
+        parser.error("--remote-dir and --remote-path are mutually exclusive")
+    if args.file and args.output_dir:
+        parser.error("--output-dir is only supported with --emit")
+    if args.file and args.event_type:
+        parser.error("--event-type is only supported with --emit")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -351,12 +412,17 @@ def main(argv: list[str] | None = None) -> int:
     emission: dict[str, Any] | None = None
     target: RemoteTarget | None = None
     planned_remote_target: str | None = None
+    local_sha256: str | None = None
+    remote_path = args.remote_dir or args.remote_path
+    remote_path_source = "cli --remote-dir" if args.remote_dir else ("cli --remote-path" if args.remote_path else None)
 
     try:
         target = resolve_remote_target(
             remote_host=args.remote_host,
             remote_user=args.remote_user,
-            remote_path=args.remote_path,
+            remote_port=args.remote_port,
+            remote_path=remote_path,
+            remote_path_source_override=remote_path_source,
             repo_root=REPO_ROOT,
         )
         if args.emit:
@@ -365,11 +431,13 @@ def main(argv: list[str] | None = None) -> int:
                 instructions=args.instructions,
                 requestor=args.requestor,
                 target_node=args.target_node,
+                event_type=args.event_type,
                 payload_json=args.payload_json,
                 payload_file=args.payload_file,
                 task_id=args.task_id,
                 correlation_id=args.correlation_id,
                 output_path=args.output_path,
+                output_dir=args.output_dir,
                 schema_path=args.schema_path,
                 allow_overwrite=args.allow_overwrite,
                 archive=args.archive,
@@ -380,12 +448,15 @@ def main(argv: list[str] | None = None) -> int:
             local_path = Path(args.file)
 
         envelope = validate_local_envelope_file(local_path, schema_path=args.schema_path)
+        local_sha256 = compute_sha256(local_path)
         planned_remote_target = target.scp_target(local_path.name)
         check_remote_intake(target)
         remote_target = transfer_envelope(local_path, target=target, dry_run=args.dry_run)
     except Exception as exc:
         if local_path is not None:
             print(f"local_path={local_path}", file=sys.stderr)
+        if local_sha256 is not None:
+            print(f"sha256={local_sha256}", file=sys.stderr)
         if emission is not None:
             print(f"validation_mode={emission['validation_mode']}", file=sys.stderr)
             print(f"schema_path={emission['schema_path'] or 'fallback-practical-validation'}", file=sys.stderr)
@@ -396,11 +467,13 @@ def main(argv: list[str] | None = None) -> int:
         if target is not None:
             print(f"remote_host_source={target.host_source}", file=sys.stderr)
             print(f"remote_path_source={target.path_source}", file=sys.stderr)
+            print(f"remote_port_source={target.port_source}", file=sys.stderr)
         print("transfer=failure", file=sys.stderr)
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
     print(f"local_path={local_path}")
+    print(f"sha256={local_sha256}")
     if emission is not None:
         print(f"validation_mode={emission['validation_mode']}")
         print(f"schema_path={emission['schema_path'] or 'fallback-practical-validation'}")
@@ -411,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"remote_target={remote_target}")
     print(f"remote_host_source={target.host_source}")
     print(f"remote_path_source={target.path_source}")
+    print(f"remote_port_source={target.port_source}")
     print(f"transfer={'dry-run' if args.dry_run else 'success'}")
     return 0
 

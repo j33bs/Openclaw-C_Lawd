@@ -36,6 +36,20 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
         self.assertEqual(outgoing_path, repo_root / "handoff" / "outgoing" / "dali" / expected_name)
         self.assertEqual(archive_path, repo_root / "handoff" / "archive" / "dali" / expected_name)
 
+    def test_resolve_handoff_paths_supports_explicit_output_dir(self) -> None:
+        repo_root = Path("/tmp/clawd-repo")
+        output_dir = repo_root / "custom" / "outgoing"
+        outgoing_path, archive_path = EMIT_DALI_HANDOFF.resolve_handoff_paths(
+            repo_root=repo_root,
+            target_node="dali",
+            task_id="task-123",
+            created_at="2026-03-18T01:02:03Z",
+            output_dir=output_dir,
+        )
+        expected_name = "2026-03-18T01-02-03Z--task-123.task-envelope.v0.json"
+        self.assertEqual(outgoing_path, output_dir / expected_name)
+        self.assertEqual(archive_path, repo_root / "handoff" / "archive" / "dali" / expected_name)
+
     def test_emit_dali_handoff_writes_outgoing_and_archive(self) -> None:
         with TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir)
