@@ -32,4 +32,5 @@ If this boundary grows beyond placeholder status, the shared ontology and protoc
 - It builds and writes envelope JSON locally, can validate against a canonical `task-envelope.v0.json` when that schema is available, and supports an explicit handoff path for local file-based consumption.
 - The schema file name remains `task-envelope.v0.json`, but the emitted envelope field must be `\"schema_version\": \"v0\"`.
 - `scripts/dev/emit_dali_handoff.py` is the operator-facing workflow entrypoint. By default it emits to `handoff/outgoing/dali/`, archives to `handoff/archive/dali/`, and reports whether validation used a canonical schema or the local practical fallback.
+- `scripts/dev/send_to_dali_v0.py` layers on top of that emitter to either emit-and-send or send an existing envelope to Dali via `scp`, targeting `handoff/incoming/dali/` by default and failing closed on missing config, invalid paths, or transfer errors.
 - Transport, auth/signing, and Dali-side consumption remain separate and deferred.
