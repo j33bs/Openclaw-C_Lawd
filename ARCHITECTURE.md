@@ -23,6 +23,7 @@ C_Lawd is the user-facing downstream assistant on top of the OpenClaw platform. 
 - C_Lawd requests work, tracks status, interprets results, and surfaces them to the operator.
 - Dali executes heavy tasks and emits observable task lifecycle events.
 - Cross-being coordination should prefer explicit APIs and events over hidden shared state or undocumented file coupling.
+- Interbeing v0 should stay limited to `submit_task`, `poll_status`, `stream_result`, `cancel_task`, and shared task/node/event identity fields; transport, auth, federation, and local adapter routing remain deferred.
 
 ## Shared vs Local
 
