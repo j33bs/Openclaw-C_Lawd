@@ -1,0 +1,7 @@
+ARCHITECTURE.md
+workspace/audit/_evidence/clawd-memory-boundary/boundary-decision.md
+workspace/audit/_evidence/clawd-memory-boundary/changed-files.txt
+workspace/audit/_evidence/clawd-memory-boundary/git-status.txt
+workspace/audit/_evidence/clawd-memory-boundary/rollback-notes.md
+workspace/audit/_evidence/clawd-memory-boundary/usage-audit.md
+workspace/memory/BOUNDARY.md

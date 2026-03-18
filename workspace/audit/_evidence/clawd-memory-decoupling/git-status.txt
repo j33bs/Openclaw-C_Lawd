@@ -1,0 +1,16 @@
+## codex/refactor/clawd-memory-decoupling
+ M MEMORY.md
+ M workspace/memory/BOUNDARY.md
+ M workspace/memory/arousal_tracker.py
+ M workspace/memory/context_compactor.py
+ M workspace/memory/conversation_summarizer.py
+ M workspace/memory/event_notifier.py
+ M workspace/memory/pattern_chunker.py
+ M workspace/memory/relationship_tracker.py
+ M workspace/memory/tacti_core.py
+ M workspace/memory/unified_query.js
+?? workspace/audit/_evidence/clawd-memory-decoupling/changed-files.txt
+?? workspace/audit/_evidence/clawd-memory-decoupling/decoupling-audit.md
+?? workspace/audit/_evidence/clawd-memory-decoupling/git-status.txt
+?? workspace/audit/_evidence/clawd-memory-decoupling/rollback-notes.md
+?? workspace/memory/paths.py

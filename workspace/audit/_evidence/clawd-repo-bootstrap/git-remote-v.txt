@@ -1,0 +1,6 @@
+dali	git@github.com:j33bs/openclaw-dali.git (fetch)
+dali	git@github.com:j33bs/openclaw-dali.git (push)
+origin	git@github.com:j33bs/Openclaw-C_Lawd.git (fetch)
+origin	git@github.com:j33bs/Openclaw-C_Lawd.git (push)
+upstream	git@github.com:openclaw/openclaw.git (fetch)
+upstream	git@github.com:openclaw/openclaw.git (push)

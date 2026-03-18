@@ -135,3 +135,13 @@ ui/src/ui/__screenshots__
 ui/src/ui/views/__screenshots__
 ui/.vitest-attachments
 docs/superpowers
+
+# local/runtime cache
+.serena/
+
+# C_Lawd downstream canonical roots
+!IDENTITY.md
+!USER.md
+!memory/
+!memory/**
+!nodes/c_lawd/**

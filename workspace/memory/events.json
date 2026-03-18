@@ -1,0 +1,34 @@
+{
+  "events": [
+    {
+      "title": "Research Complete",
+      "message": "Downloaded 14 architecture PDFs",
+      "urgency": "normal",
+      "timestamp": "2026-02-21T15:43:50.514336",
+      "read": false
+    },
+    {
+      "title": "Relationship Update",
+      "message": "Trust score at 100%",
+      "urgency": "normal",
+      "timestamp": "2026-02-21T15:43:50.514735",
+      "read": false
+    },
+    {
+      "title": "\u26a0\ufe0f Arousal High",
+      "message": "Average tokens approaching threshold",
+      "urgency": "high",
+      "timestamp": "2026-02-21T15:43:50.514981",
+      "read": false
+    }
+  ],
+  "notifications": [
+    {
+      "title": "\u26a0\ufe0f Arousal High",
+      "message": "Average tokens approaching threshold",
+      "urgency": "high",
+      "timestamp": "2026-02-21T15:43:50.514981",
+      "read": false
+    }
+  ]
+}
