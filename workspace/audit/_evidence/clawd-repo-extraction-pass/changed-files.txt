@@ -1,0 +1,8 @@
+ARCHITECTURE.md
+README.md
+workspace/audit/_evidence/clawd-repo-extraction-pass/changed-files.txt
+workspace/audit/_evidence/clawd-repo-extraction-pass/classification.md
+workspace/audit/_evidence/clawd-repo-extraction-pass/coupling-blockers.md
+workspace/audit/_evidence/clawd-repo-extraction-pass/git-status.txt
+workspace/audit/_evidence/clawd-repo-extraction-pass/next-pass-plan.md
+workspace/audit/_evidence/clawd-repo-extraction-pass/rollback-notes.md

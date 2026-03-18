@@ -29,3 +29,9 @@ C_Lawd is the user-facing downstream assistant on top of the OpenClaw platform. 
 - Shared ontology, schemas, and cross-being protocols should move to a future dedicated repository, `openclaw-interbeing`.
 - Local implementation details, prompts, and repository-specific operations remain local to each downstream.
 - Upstream OpenClaw remains the base platform and contract source unless a downstream boundary document explicitly narrows behavior.
+
+## Current Extraction State
+
+- The manifest-verified C_Lawd-owned roots are `nodes/c_lawd/`, root `IDENTITY.md`, `USER.md`, `SOUL.md`, `MEMORY.md`, root `memory/`, and provisional `workspace/memory/`.
+- Those roots are not yet fully present in this downstream repo; the current tree is still mostly retained upstream/shared platform substrate plus downstream governance and audit docs.
+- Hard extraction should wait until path-coupled shared components stop assuming monorepo-local `nodes/c_lawd` and `nodes/dali` layouts.
