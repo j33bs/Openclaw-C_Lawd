@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from interbeing_contract.submit_task_v0 import (
     DEFAULT_OPERATION,
+    DEFAULT_SCHEMA_ENV_VAR,
+    DEFAULT_ROOT_ENV_VAR,
     DEFAULT_SCHEMA_VERSION,
     build_submit_task_envelope,
     build_submit_task_envelope_file,
@@ -16,6 +20,29 @@ from interbeing_contract.submit_task_v0 import (
 
 
 class SubmitTaskEnvelopeV0Tests(unittest.TestCase):
+    def test_resolve_task_envelope_schema_path_uses_expected_precedence(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            explicit_schema = temp_root / "explicit-task-envelope.v0.json"
+            env_schema = temp_root / "env-task-envelope.v0.json"
+            env_root = temp_root / "interbeing-root"
+            env_root_schema = env_root / "schemas" / "task-envelope.v0.json"
+            for schema_path in (explicit_schema, env_schema, env_root_schema):
+                schema_path.parent.mkdir(parents=True, exist_ok=True)
+                schema_path.write_text("{}", encoding="utf-8")
+
+            env = {
+                DEFAULT_SCHEMA_ENV_VAR: str(env_schema),
+                DEFAULT_ROOT_ENV_VAR: str(env_root),
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                self.assertEqual(resolve_task_envelope_schema_path(explicit_schema), explicit_schema.resolve())
+                self.assertEqual(resolve_task_envelope_schema_path(), env_schema.resolve())
+
+            with mock.patch.dict(os.environ, {DEFAULT_ROOT_ENV_VAR: str(env_root)}, clear=False):
+                with mock.patch.dict(os.environ, {DEFAULT_SCHEMA_ENV_VAR: ""}, clear=False):
+                    self.assertEqual(resolve_task_envelope_schema_path(), env_root_schema.resolve())
+
     def test_build_submit_task_envelope_uses_schema_file_when_available(self) -> None:
         with TemporaryDirectory() as temp_dir:
             schema_path = Path(temp_dir) / "task-envelope.v0.json"
