@@ -30,6 +30,7 @@ ENV_REMOTE_PORT = "OPENCLAW_INTERBEING_DALI_REMOTE_PORT"
 ENV_REMOTE_PATH = "OPENCLAW_INTERBEING_DALI_INTAKE_PATH"
 ROLE_CHOICES = ("planner", "executor", "reviewer")
 LOCAL_DISPATCH_KEY = "local_dispatch"
+TASK_CONTRACT_KEY = "task_contract"
 LOCAL_DISPATCH_FIELDS = (
     "target_role",
     "source_role",
@@ -37,6 +38,13 @@ LOCAL_DISPATCH_FIELDS = (
     "parent_task_id",
     "hop_count",
     "max_hops",
+)
+TASK_CONTRACT_FIELDS = (
+    "task_class",
+    "acceptance_criteria",
+    "review_mode",
+    "worker_limit",
+    "execution_notes",
 )
 
 
@@ -181,6 +189,28 @@ def _non_negative_int(value: int | None, *, field_name: str) -> int | None:
     return value
 
 
+def _positive_int(value: int | None, *, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if value < 1:
+        raise ValueError(f"{field_name} must be greater than or equal to 1")
+    return value
+
+
+def _non_empty_string_list(values: list[str] | None, *, field_name: str) -> list[str] | None:
+    if values is None:
+        return None
+    normalized_values: list[str] = []
+    for value in values:
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError(f"{field_name} must not contain empty strings")
+        normalized_values.append(normalized_value)
+    if not normalized_values:
+        raise ValueError(f"{field_name} must contain at least one value when provided")
+    return normalized_values
+
+
 def build_local_dispatch_metadata(
     *,
     target_role: str | None,
@@ -189,8 +219,14 @@ def build_local_dispatch_metadata(
     parent_task_id: str | None,
     hop_count: int | None,
     max_hops: int | None,
+    task_class: str | None,
+    acceptance_criteria: list[str] | None,
+    review_mode: str | None,
+    worker_limit: int | None,
+    execution_notes: str | None,
 ) -> dict[str, Any]:
     local_dispatch: dict[str, Any] = {}
+    task_contract: dict[str, Any] = {}
 
     normalized_target_role = _non_empty_string(target_role, field_name="target role")
     normalized_source_role = _non_empty_string(source_role, field_name="source role")
@@ -198,6 +234,13 @@ def build_local_dispatch_metadata(
     normalized_parent_task_id = _non_empty_string(parent_task_id, field_name="parent task id")
     normalized_hop_count = _non_negative_int(hop_count, field_name="hop count")
     normalized_max_hops = _non_negative_int(max_hops, field_name="max hops")
+    normalized_task_class = _non_empty_string(task_class, field_name="task class")
+    normalized_acceptance_criteria = _non_empty_string_list(
+        acceptance_criteria, field_name="acceptance criteria"
+    )
+    normalized_review_mode = _non_empty_string(review_mode, field_name="review mode")
+    normalized_worker_limit = _positive_int(worker_limit, field_name="worker limit")
+    normalized_execution_notes = _non_empty_string(execution_notes, field_name="execution notes")
 
     if normalized_max_hops == 0:
         raise ValueError("max hops must be greater than or equal to 1 when provided")
@@ -216,6 +259,18 @@ def build_local_dispatch_metadata(
         local_dispatch["hop_count"] = normalized_hop_count
     if normalized_max_hops is not None:
         local_dispatch["max_hops"] = normalized_max_hops
+    if normalized_task_class is not None:
+        task_contract["task_class"] = normalized_task_class
+    if normalized_acceptance_criteria is not None:
+        task_contract["acceptance_criteria"] = normalized_acceptance_criteria
+    if normalized_review_mode is not None:
+        task_contract["review_mode"] = normalized_review_mode
+    if normalized_worker_limit is not None:
+        task_contract["worker_limit"] = normalized_worker_limit
+    if normalized_execution_notes is not None:
+        task_contract["execution_notes"] = normalized_execution_notes
+    if task_contract:
+        local_dispatch[TASK_CONTRACT_KEY] = task_contract
 
     return local_dispatch
 
@@ -238,6 +293,22 @@ def merge_local_dispatch_metadata(
     merged_local_dispatch = dict(existing_local_dispatch)
     for field_name, value in local_dispatch_metadata.items():
         existing_value = merged_local_dispatch.get(field_name)
+        if field_name == TASK_CONTRACT_KEY:
+            if existing_value is None:
+                merged_local_dispatch[field_name] = dict(value)
+                continue
+            if not isinstance(existing_value, Mapping):
+                raise ValueError(f"{TASK_CONTRACT_KEY} must be a mapping when provided via payload")
+            merged_task_contract = dict(existing_value)
+            for contract_field_name, contract_value in value.items():
+                existing_contract_value = merged_task_contract.get(contract_field_name)
+                if existing_contract_value is not None and existing_contract_value != contract_value:
+                    raise ValueError(
+                        f"{contract_field_name} conflict: payload already defines {contract_field_name} with a different value"
+                    )
+                merged_task_contract[contract_field_name] = contract_value
+            merged_local_dispatch[field_name] = merged_task_contract
+            continue
         if existing_value is not None and existing_value != value:
             raise ValueError(
                 f"{field_name} conflict: payload already defines {field_name} with a different value"
@@ -255,11 +326,28 @@ def extract_local_dispatch_metadata(envelope: Mapping[str, Any]) -> dict[str, An
     local_dispatch = payload.get(LOCAL_DISPATCH_KEY)
     if not isinstance(local_dispatch, Mapping):
         return {}
-    return {
-        field_name: local_dispatch[field_name]
-        for field_name in LOCAL_DISPATCH_FIELDS
-        if field_name in local_dispatch
-    }
+    return dict(local_dispatch)
+
+
+def iter_local_dispatch_output_fields(envelope: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    local_dispatch = extract_local_dispatch_metadata(envelope)
+    output_fields: list[tuple[str, Any]] = []
+    for field_name in LOCAL_DISPATCH_FIELDS:
+        if field_name in local_dispatch:
+            output_fields.append((field_name, local_dispatch[field_name]))
+
+    task_contract = local_dispatch.get(TASK_CONTRACT_KEY)
+    if isinstance(task_contract, Mapping):
+        for field_name in TASK_CONTRACT_FIELDS:
+            if field_name not in task_contract:
+                continue
+            if field_name == "acceptance_criteria":
+                output_fields.append(
+                    ("acceptance_criteria_json", json.dumps(task_contract[field_name], ensure_ascii=True))
+                )
+            else:
+                output_fields.append((field_name, task_contract[field_name]))
+    return output_fields
 
 
 def resolve_remote_target(
@@ -354,6 +442,11 @@ def emit_local_envelope(
     parent_task_id: str | None,
     hop_count: int | None,
     max_hops: int | None,
+    task_class: str | None,
+    acceptance_criteria: list[str] | None,
+    review_mode: str | None,
+    worker_limit: int | None,
+    execution_notes: str | None,
     payload_json: str | None,
     payload_file: str | None,
     task_id: str | None,
@@ -388,6 +481,11 @@ def emit_local_envelope(
             parent_task_id=parent_task_id,
             hop_count=hop_count,
             max_hops=max_hops,
+            task_class=task_class,
+            acceptance_criteria=acceptance_criteria,
+            review_mode=review_mode,
+            worker_limit=worker_limit,
+            execution_notes=execution_notes,
         ),
     )
     return emitter.emit_dali_handoff(
@@ -498,6 +596,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--parent-task-id", help="Optional adapter-local parent task id for emit mode.")
     parser.add_argument("--hop-count", type=int, help="Optional adapter-local hop count for emit mode.")
     parser.add_argument("--max-hops", type=int, help="Optional adapter-local max hops for emit mode.")
+    parser.add_argument("--task-class", help="Optional adapter-local task class for emit mode.")
+    parser.add_argument(
+        "--acceptance-criterion",
+        dest="acceptance_criteria",
+        action="append",
+        help="Repeatable adapter-local acceptance criterion for emit mode.",
+    )
+    parser.add_argument("--review-mode", help="Optional adapter-local review mode for emit mode.")
+    parser.add_argument("--worker-limit", type=int, help="Optional adapter-local worker limit for emit mode.")
+    parser.add_argument("--execution-notes", help="Optional adapter-local execution notes for emit mode.")
     payload_group = parser.add_mutually_exclusive_group()
     payload_group.add_argument("--payload-json", help="Additional payload fields as a JSON object string.")
     payload_group.add_argument("--payload-file", help="Path to a JSON file containing additional payload fields.")
@@ -544,6 +652,16 @@ def _require_emit_args(parser: argparse.ArgumentParser, args: argparse.Namespace
         parser.error("--hop-count is only supported with --emit")
     if args.file and args.max_hops is not None:
         parser.error("--max-hops is only supported with --emit")
+    if args.file and args.task_class:
+        parser.error("--task-class is only supported with --emit")
+    if args.file and args.acceptance_criteria:
+        parser.error("--acceptance-criterion is only supported with --emit")
+    if args.file and args.review_mode:
+        parser.error("--review-mode is only supported with --emit")
+    if args.file and args.worker_limit is not None:
+        parser.error("--worker-limit is only supported with --emit")
+    if args.file and args.execution_notes:
+        parser.error("--execution-notes is only supported with --emit")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -584,6 +702,11 @@ def main(argv: list[str] | None = None) -> int:
                 parent_task_id=args.parent_task_id,
                 hop_count=args.hop_count,
                 max_hops=args.max_hops,
+                task_class=args.task_class,
+                acceptance_criteria=args.acceptance_criteria,
+                review_mode=args.review_mode,
+                worker_limit=args.worker_limit,
+                execution_notes=args.execution_notes,
                 payload_json=args.payload_json,
                 payload_file=args.payload_file,
                 task_id=args.task_id,
@@ -621,7 +744,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"validation_source={validation_source}", file=sys.stderr)
         if envelope is not None:
             print(f"schema_version={envelope['schema_version']}", file=sys.stderr)
-            for field_name, value in extract_local_dispatch_metadata(envelope).items():
+            for field_name, value in iter_local_dispatch_output_fields(envelope):
                 print(f"{field_name}={value}", file=sys.stderr)
         if planned_remote_target is not None:
             print(f"remote_target={planned_remote_target}", file=sys.stderr)
@@ -638,7 +761,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"validation_mode={validation_mode}")
     print(f"validation_source={validation_source}")
     print(f"schema_version={envelope['schema_version']}")
-    for field_name, value in extract_local_dispatch_metadata(envelope).items():
+    for field_name, value in iter_local_dispatch_output_fields(envelope):
         print(f"{field_name}={value}")
     print(f"remote_target={remote_target}")
     print(f"remote_host_source={target.host_source}")

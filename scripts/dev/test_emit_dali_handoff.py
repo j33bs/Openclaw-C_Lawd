@@ -92,6 +92,11 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
                         "source_role": "planner",
                         "target_role": "executor",
                         "chain_id": "chain-xyz",
+                        "task_contract": {
+                            "task_class": "executor_work",
+                            "acceptance_criteria": ["produce summary"],
+                            "worker_limit": 1,
+                        },
                     }
                 },
                 task_id="task-emit-local-dispatch",
@@ -106,6 +111,11 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
                     "source_role": "planner",
                     "target_role": "executor",
                     "chain_id": "chain-xyz",
+                    "task_contract": {
+                        "task_class": "executor_work",
+                        "acceptance_criteria": ["produce summary"],
+                        "worker_limit": 1,
+                    },
                 },
             )
 

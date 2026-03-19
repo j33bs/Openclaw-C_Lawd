@@ -32,6 +32,70 @@ SEND_TO_DALI = load_script_module()
 
 
 class SendToDaliV0Tests(unittest.TestCase):
+    def test_build_local_dispatch_metadata_rejects_zero_max_hops(self) -> None:
+        with self.assertRaisesRegex(ValueError, "max hops must be greater than or equal to 1"):
+            SEND_TO_DALI.build_local_dispatch_metadata(
+                target_role="executor",
+                source_role="planner",
+                chain_id="chain-123",
+                parent_task_id="parent-123",
+                hop_count=0,
+                max_hops=0,
+                task_class=None,
+                acceptance_criteria=None,
+                review_mode=None,
+                worker_limit=None,
+                execution_notes=None,
+            )
+
+    def test_build_local_dispatch_metadata_rejects_hop_overflow(self) -> None:
+        with self.assertRaisesRegex(ValueError, "hop count cannot exceed max hops"):
+            SEND_TO_DALI.build_local_dispatch_metadata(
+                target_role="executor",
+                source_role="planner",
+                chain_id="chain-123",
+                parent_task_id="parent-123",
+                hop_count=3,
+                max_hops=2,
+                task_class=None,
+                acceptance_criteria=None,
+                review_mode=None,
+                worker_limit=None,
+                execution_notes=None,
+            )
+
+    def test_emit_local_envelope_rejects_task_contract_conflict_with_payload(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(ValueError, "task_class conflict"):
+                SEND_TO_DALI.emit_local_envelope(
+                    title="Conflict",
+                    instructions="This should fail.",
+                    requestor="c_lawd",
+                    target_node="dali",
+                    event_type=None,
+                    target_role=None,
+                    source_role=None,
+                    chain_id=None,
+                    parent_task_id=None,
+                    hop_count=None,
+                    max_hops=None,
+                    task_class="executor_work",
+                    acceptance_criteria=None,
+                    review_mode=None,
+                    worker_limit=None,
+                    execution_notes=None,
+                    payload_json='{"local_dispatch":{"task_contract":{"task_class":"review_work"}}}',
+                    payload_file=None,
+                    task_id="task-conflict-001",
+                    correlation_id="corr-conflict-001",
+                    output_path=None,
+                    output_dir=str(Path(temp_dir)),
+                    schema_path=None,
+                    allow_overwrite=False,
+                    archive=False,
+                    repo_root=SCRIPT_PATH.parents[2],
+                )
+
     def test_resolve_remote_target_uses_discovered_alias_and_default_path(self) -> None:
         with mock.patch.object(SEND_TO_DALI, "discover_default_dali_alias", return_value="dali"):
             target = SEND_TO_DALI.resolve_remote_target(
@@ -126,6 +190,58 @@ class SendToDaliV0Tests(unittest.TestCase):
             self.assertIn("hop_count=1", output)
             self.assertIn("max_hops=4", output)
 
+    def test_emit_mode_includes_concrete_task_contract_fields(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "emit-contract"
+            stdout = io.StringIO()
+            with mock.patch.object(SEND_TO_DALI, "check_remote_intake"), mock.patch.object(
+                SEND_TO_DALI, "transfer_envelope", return_value="dali:handoff/incoming/dali/emit-contract.task-envelope.v0.json"
+            ), mock.patch.object(SEND_TO_DALI, "discover_default_dali_alias", return_value="dali"), redirect_stdout(stdout):
+                exit_code = SEND_TO_DALI.main(
+                    [
+                        "--emit",
+                        "--title",
+                        "Concrete contract",
+                        "--instructions",
+                        "Emit a contract-rich handoff.",
+                        "--task-class",
+                        "executor_work",
+                        "--acceptance-criterion",
+                        "produce summary",
+                        "--acceptance-criterion",
+                        "cite evidence",
+                        "--review-mode",
+                        "peer_review",
+                        "--worker-limit",
+                        "2",
+                        "--execution-notes",
+                        "Prefer concise operator-visible output.",
+                        "--output-dir",
+                        str(output_dir),
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(exit_code, 0)
+            created_files = list(output_dir.glob("*.task-envelope.v0.json"))
+            self.assertEqual(len(created_files), 1)
+            payload = SEND_TO_DALI.validate_local_envelope_file(created_files[0])
+            self.assertEqual(
+                payload["payload"]["local_dispatch"]["task_contract"],
+                {
+                    "task_class": "executor_work",
+                    "acceptance_criteria": ["produce summary", "cite evidence"],
+                    "review_mode": "peer_review",
+                    "worker_limit": 2,
+                    "execution_notes": "Prefer concise operator-visible output.",
+                },
+            )
+            output = stdout.getvalue()
+            self.assertIn("task_class=executor_work", output)
+            self.assertIn('acceptance_criteria_json=["produce summary", "cite evidence"]', output)
+            self.assertIn("review_mode=peer_review", output)
+            self.assertIn("worker_limit=2", output)
+            self.assertIn("execution_notes=Prefer concise operator-visible output.", output)
+
     def test_validate_local_envelope_file_rejects_missing_path(self) -> None:
         missing = Path("/tmp/nonexistent-send-to-dali-v0.task-envelope.v0.json")
         with self.assertRaisesRegex(FileNotFoundError, "missing local envelope file"):
@@ -195,14 +311,14 @@ class SendToDaliV0Tests(unittest.TestCase):
         self.assertIn("2200", command)
         self.assertEqual(remote_target, f"runner@cli-host:/srv/handoff/incoming/dali/{source_path.name}")
 
-    def test_file_mode_rejects_role_and_lineage_flags(self) -> None:
+    def test_file_mode_rejects_emit_only_adapter_fields(self) -> None:
         with self.assertRaises(SystemExit) as exc:
             SEND_TO_DALI.main(
                 [
                     "--file",
                     "/tmp/example.task-envelope.v0.json",
-                    "--target-role",
-                    "executor",
+                    "--task-class",
+                    "executor_work",
                 ]
             )
         self.assertNotEqual(exc.exception.code, 0)

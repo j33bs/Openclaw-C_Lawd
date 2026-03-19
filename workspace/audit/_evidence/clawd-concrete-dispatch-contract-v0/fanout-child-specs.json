@@ -1,0 +1,28 @@
+[
+  {
+    "title": "Executor summary child",
+    "instructions": "Produce a concise execution summary with evidence bullets.",
+    "task_id": "task-fanout-child-001",
+    "task_class": "executor_work",
+    "acceptance_criteria": [
+      "produce summary",
+      "cite evidence"
+    ],
+    "review_mode": "peer_review",
+    "worker_limit": 1,
+    "execution_notes": "Keep output concise and operator-visible."
+  },
+  {
+    "title": "Reviewer check child",
+    "instructions": "Review the executor summary for completeness.",
+    "task_id": "task-fanout-child-002",
+    "target_role": "reviewer",
+    "task_class": "review_work",
+    "acceptance_criteria": [
+      "identify gaps",
+      "flag unclear evidence"
+    ],
+    "review_mode": "final_check",
+    "worker_limit": 1
+  }
+]
