@@ -28,6 +28,16 @@ ENV_REMOTE_HOST = "OPENCLAW_INTERBEING_DALI_REMOTE_HOST"
 ENV_REMOTE_USER = "OPENCLAW_INTERBEING_DALI_REMOTE_USER"
 ENV_REMOTE_PORT = "OPENCLAW_INTERBEING_DALI_REMOTE_PORT"
 ENV_REMOTE_PATH = "OPENCLAW_INTERBEING_DALI_INTAKE_PATH"
+ROLE_CHOICES = ("planner", "executor", "reviewer")
+LOCAL_DISPATCH_KEY = "local_dispatch"
+LOCAL_DISPATCH_FIELDS = (
+    "target_role",
+    "source_role",
+    "chain_id",
+    "parent_task_id",
+    "hop_count",
+    "max_hops",
+)
 
 
 @dataclass(frozen=True)
@@ -154,6 +164,104 @@ def _assert_safe_remote_port(value: str | int) -> int:
     return port
 
 
+def _non_empty_string(value: str | None, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return normalized
+
+
+def _non_negative_int(value: int | None, *, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if value < 0:
+        raise ValueError(f"{field_name} must be greater than or equal to 0")
+    return value
+
+
+def build_local_dispatch_metadata(
+    *,
+    target_role: str | None,
+    source_role: str | None,
+    chain_id: str | None,
+    parent_task_id: str | None,
+    hop_count: int | None,
+    max_hops: int | None,
+) -> dict[str, Any]:
+    local_dispatch: dict[str, Any] = {}
+
+    normalized_target_role = _non_empty_string(target_role, field_name="target role")
+    normalized_source_role = _non_empty_string(source_role, field_name="source role")
+    normalized_chain_id = _non_empty_string(chain_id, field_name="chain id")
+    normalized_parent_task_id = _non_empty_string(parent_task_id, field_name="parent task id")
+    normalized_hop_count = _non_negative_int(hop_count, field_name="hop count")
+    normalized_max_hops = _non_negative_int(max_hops, field_name="max hops")
+
+    if normalized_max_hops == 0:
+        raise ValueError("max hops must be greater than or equal to 1 when provided")
+    if normalized_hop_count is not None and normalized_max_hops is not None and normalized_hop_count > normalized_max_hops:
+        raise ValueError("hop count cannot exceed max hops")
+
+    if normalized_target_role is not None:
+        local_dispatch["target_role"] = normalized_target_role
+    if normalized_source_role is not None:
+        local_dispatch["source_role"] = normalized_source_role
+    if normalized_chain_id is not None:
+        local_dispatch["chain_id"] = normalized_chain_id
+    if normalized_parent_task_id is not None:
+        local_dispatch["parent_task_id"] = normalized_parent_task_id
+    if normalized_hop_count is not None:
+        local_dispatch["hop_count"] = normalized_hop_count
+    if normalized_max_hops is not None:
+        local_dispatch["max_hops"] = normalized_max_hops
+
+    return local_dispatch
+
+
+def merge_local_dispatch_metadata(
+    extra_payload: dict[str, Any],
+    *,
+    local_dispatch_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not local_dispatch_metadata:
+        return extra_payload
+
+    existing_local_dispatch = extra_payload.get(LOCAL_DISPATCH_KEY)
+    if existing_local_dispatch is None:
+        extra_payload[LOCAL_DISPATCH_KEY] = dict(local_dispatch_metadata)
+        return extra_payload
+    if not isinstance(existing_local_dispatch, Mapping):
+        raise ValueError(f"{LOCAL_DISPATCH_KEY} must be a mapping when provided via payload")
+
+    merged_local_dispatch = dict(existing_local_dispatch)
+    for field_name, value in local_dispatch_metadata.items():
+        existing_value = merged_local_dispatch.get(field_name)
+        if existing_value is not None and existing_value != value:
+            raise ValueError(
+                f"{field_name} conflict: payload already defines {field_name} with a different value"
+            )
+        merged_local_dispatch[field_name] = value
+
+    extra_payload[LOCAL_DISPATCH_KEY] = merged_local_dispatch
+    return extra_payload
+
+
+def extract_local_dispatch_metadata(envelope: Mapping[str, Any]) -> dict[str, Any]:
+    payload = envelope.get("payload")
+    if not isinstance(payload, Mapping):
+        return {}
+    local_dispatch = payload.get(LOCAL_DISPATCH_KEY)
+    if not isinstance(local_dispatch, Mapping):
+        return {}
+    return {
+        field_name: local_dispatch[field_name]
+        for field_name in LOCAL_DISPATCH_FIELDS
+        if field_name in local_dispatch
+    }
+
+
 def resolve_remote_target(
     *,
     remote_host: str | None,
@@ -240,6 +348,12 @@ def emit_local_envelope(
     requestor: str,
     target_node: str,
     event_type: str | None,
+    target_role: str | None,
+    source_role: str | None,
+    chain_id: str | None,
+    parent_task_id: str | None,
+    hop_count: int | None,
+    max_hops: int | None,
     payload_json: str | None,
     payload_file: str | None,
     task_id: str | None,
@@ -265,6 +379,17 @@ def emit_local_envelope(
                 "event_type conflict: payload already defines event_type with a different value"
             )
         extra_payload["event_type"] = normalized_event_type
+    extra_payload = merge_local_dispatch_metadata(
+        extra_payload,
+        local_dispatch_metadata=build_local_dispatch_metadata(
+            target_role=target_role,
+            source_role=source_role,
+            chain_id=chain_id,
+            parent_task_id=parent_task_id,
+            hop_count=hop_count,
+            max_hops=max_hops,
+        ),
+    )
     return emitter.emit_dali_handoff(
         title=title,
         instructions=instructions,
@@ -367,6 +492,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--event-type",
         help="Optional payload event_type annotation for emit mode. This stays inside payload and does not alter the canonical top-level envelope schema.",
     )
+    parser.add_argument("--target-role", choices=ROLE_CHOICES, help="Optional adapter-local target role for emit mode.")
+    parser.add_argument("--source-role", choices=ROLE_CHOICES, help="Optional adapter-local source role for emit mode.")
+    parser.add_argument("--chain-id", help="Optional adapter-local chain id for emit mode.")
+    parser.add_argument("--parent-task-id", help="Optional adapter-local parent task id for emit mode.")
+    parser.add_argument("--hop-count", type=int, help="Optional adapter-local hop count for emit mode.")
+    parser.add_argument("--max-hops", type=int, help="Optional adapter-local max hops for emit mode.")
     payload_group = parser.add_mutually_exclusive_group()
     payload_group.add_argument("--payload-json", help="Additional payload fields as a JSON object string.")
     payload_group.add_argument("--payload-file", help="Path to a JSON file containing additional payload fields.")
@@ -401,6 +532,18 @@ def _require_emit_args(parser: argparse.ArgumentParser, args: argparse.Namespace
         parser.error("--output-dir is only supported with --emit")
     if args.file and args.event_type:
         parser.error("--event-type is only supported with --emit")
+    if args.file and args.target_role:
+        parser.error("--target-role is only supported with --emit")
+    if args.file and args.source_role:
+        parser.error("--source-role is only supported with --emit")
+    if args.file and args.chain_id:
+        parser.error("--chain-id is only supported with --emit")
+    if args.file and args.parent_task_id:
+        parser.error("--parent-task-id is only supported with --emit")
+    if args.file and args.hop_count is not None:
+        parser.error("--hop-count is only supported with --emit")
+    if args.file and args.max_hops is not None:
+        parser.error("--max-hops is only supported with --emit")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -435,6 +578,12 @@ def main(argv: list[str] | None = None) -> int:
                 requestor=args.requestor,
                 target_node=args.target_node,
                 event_type=args.event_type,
+                target_role=args.target_role,
+                source_role=args.source_role,
+                chain_id=args.chain_id,
+                parent_task_id=args.parent_task_id,
+                hop_count=args.hop_count,
+                max_hops=args.max_hops,
                 payload_json=args.payload_json,
                 payload_file=args.payload_file,
                 task_id=args.task_id,
@@ -472,6 +621,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"validation_source={validation_source}", file=sys.stderr)
         if envelope is not None:
             print(f"schema_version={envelope['schema_version']}", file=sys.stderr)
+            for field_name, value in extract_local_dispatch_metadata(envelope).items():
+                print(f"{field_name}={value}", file=sys.stderr)
         if planned_remote_target is not None:
             print(f"remote_target={planned_remote_target}", file=sys.stderr)
         if target is not None:
@@ -487,6 +638,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"validation_mode={validation_mode}")
     print(f"validation_source={validation_source}")
     print(f"schema_version={envelope['schema_version']}")
+    for field_name, value in extract_local_dispatch_metadata(envelope).items():
+        print(f"{field_name}={value}")
     print(f"remote_target={remote_target}")
     print(f"remote_host_source={target.host_source}")
     print(f"remote_path_source={target.path_source}")

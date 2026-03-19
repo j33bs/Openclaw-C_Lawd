@@ -81,6 +81,18 @@ class SendToDaliV0Tests(unittest.TestCase):
                         "Use the existing emitter flow.",
                         "--event-type",
                         "task.submitted",
+                        "--source-role",
+                        "planner",
+                        "--target-role",
+                        "executor",
+                        "--chain-id",
+                        "chain-123",
+                        "--parent-task-id",
+                        "parent-456",
+                        "--hop-count",
+                        "1",
+                        "--max-hops",
+                        "4",
                         "--output-dir",
                         str(output_dir),
                         "--dry-run",
@@ -92,10 +104,27 @@ class SendToDaliV0Tests(unittest.TestCase):
             payload = SEND_TO_DALI.validate_local_envelope_file(created_files[0])
             self.assertEqual(payload["schema_version"], "v0")
             self.assertEqual(payload["payload"]["event_type"], "task.submitted")
+            self.assertEqual(
+                payload["payload"]["local_dispatch"],
+                {
+                    "source_role": "planner",
+                    "target_role": "executor",
+                    "chain_id": "chain-123",
+                    "parent_task_id": "parent-456",
+                    "hop_count": 1,
+                    "max_hops": 4,
+                },
+            )
             output = stdout.getvalue()
             self.assertIn("sha256=", output)
             self.assertIn("validation_mode=canonical_contract_validation", output)
             self.assertIn("validation_source=interbeing_contract.submit_task_v0", output)
+            self.assertIn("source_role=planner", output)
+            self.assertIn("target_role=executor", output)
+            self.assertIn("chain_id=chain-123", output)
+            self.assertIn("parent_task_id=parent-456", output)
+            self.assertIn("hop_count=1", output)
+            self.assertIn("max_hops=4", output)
 
     def test_validate_local_envelope_file_rejects_missing_path(self) -> None:
         missing = Path("/tmp/nonexistent-send-to-dali-v0.task-envelope.v0.json")
@@ -165,6 +194,18 @@ class SendToDaliV0Tests(unittest.TestCase):
         self.assertIn("-P", command)
         self.assertIn("2200", command)
         self.assertEqual(remote_target, f"runner@cli-host:/srv/handoff/incoming/dali/{source_path.name}")
+
+    def test_file_mode_rejects_role_and_lineage_flags(self) -> None:
+        with self.assertRaises(SystemExit) as exc:
+            SEND_TO_DALI.main(
+                [
+                    "--file",
+                    "/tmp/example.task-envelope.v0.json",
+                    "--target-role",
+                    "executor",
+                ]
+            )
+        self.assertNotEqual(exc.exception.code, 0)
 
 
 if __name__ == "__main__":

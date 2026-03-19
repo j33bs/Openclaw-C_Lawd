@@ -77,6 +77,37 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
             self.assertEqual(payload["payload"]["source"], "unit-test")
             self.assertEqual(result["validation_mode"], "canonical_contract_validation")
             self.assertEqual(result["validation_source"], "interbeing_contract.submit_task_v0")
+            self.assertNotIn("local_dispatch", payload["payload"])
+
+    def test_emit_dali_handoff_preserves_adapter_local_dispatch_payload(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            result = EMIT_DALI_HANDOFF.emit_dali_handoff(
+                title="Workflow smoke",
+                instructions="Write outgoing with local dispatch metadata.",
+                requestor="c_lawd",
+                target_node="dali",
+                extra_payload={
+                    "local_dispatch": {
+                        "source_role": "planner",
+                        "target_role": "executor",
+                        "chain_id": "chain-xyz",
+                    }
+                },
+                task_id="task-emit-local-dispatch",
+                correlation_id="corr-emit-local-dispatch",
+                created_at="2026-03-18T01:02:03Z",
+                repo_root=repo_root,
+            )
+            payload = json.loads(result["outgoing_path"].read_text(encoding="utf-8"))
+            self.assertEqual(
+                payload["payload"]["local_dispatch"],
+                {
+                    "source_role": "planner",
+                    "target_role": "executor",
+                    "chain_id": "chain-xyz",
+                },
+            )
 
     def test_emit_dali_handoff_refuses_overwrite_by_default(self) -> None:
         with TemporaryDirectory() as temp_dir:
