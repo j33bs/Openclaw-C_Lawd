@@ -75,7 +75,8 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
             self.assertEqual(payload["payload"]["title"], "Workflow smoke")
             self.assertEqual(payload["payload"]["instructions"], "Write both outgoing and archive copies.")
             self.assertEqual(payload["payload"]["source"], "unit-test")
-            self.assertEqual(result["validation_mode"], "fallback_practical_validation")
+            self.assertEqual(result["validation_mode"], "canonical_contract_validation")
+            self.assertEqual(result["validation_source"], "interbeing_contract.submit_task_v0")
 
     def test_emit_dali_handoff_refuses_overwrite_by_default(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -128,6 +129,7 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
             self.assertEqual(payload["task_id"], "task-cli-123")
             self.assertIn("outgoing_path=", completed.stdout)
             self.assertIn("validation_mode=", completed.stdout)
+            self.assertIn("validation_source=", completed.stdout)
 
 
 if __name__ == "__main__":

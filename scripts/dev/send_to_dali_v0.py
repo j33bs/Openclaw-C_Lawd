@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from interbeing_contract.submit_task_v0 import validate_submit_task_envelope_shape  # noqa: E402
+from interbeing_contract.submit_task_v0 import resolve_submit_task_validation_provenance  # noqa: E402
 
 EMITTER_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "emit_dali_handoff.py"
 EXPECTED_FILENAME_SUFFIX = ".task-envelope.v0.json"
@@ -413,6 +414,8 @@ def main(argv: list[str] | None = None) -> int:
     target: RemoteTarget | None = None
     planned_remote_target: str | None = None
     local_sha256: str | None = None
+    validation_mode: str | None = None
+    validation_source: str | None = None
     remote_path = args.remote_dir or args.remote_path
     remote_path_source = "cli --remote-dir" if args.remote_dir else ("cli --remote-path" if args.remote_path else None)
 
@@ -444,10 +447,16 @@ def main(argv: list[str] | None = None) -> int:
                 repo_root=REPO_ROOT,
             )
             local_path = Path(emission["outgoing_path"])
+            validation_mode = emission["validation_mode"]
+            validation_source = emission["validation_source"]
         else:
             local_path = Path(args.file)
 
         envelope = validate_local_envelope_file(local_path, schema_path=args.schema_path)
+        if validation_mode is None or validation_source is None:
+            validation_provenance = resolve_submit_task_validation_provenance(args.schema_path)
+            validation_mode = validation_provenance.mode
+            validation_source = validation_provenance.source
         local_sha256 = compute_sha256(local_path)
         planned_remote_target = target.scp_target(local_path.name)
         check_remote_intake(target)
@@ -457,9 +466,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"local_path={local_path}", file=sys.stderr)
         if local_sha256 is not None:
             print(f"sha256={local_sha256}", file=sys.stderr)
-        if emission is not None:
-            print(f"validation_mode={emission['validation_mode']}", file=sys.stderr)
-            print(f"schema_path={emission['schema_path'] or 'fallback-practical-validation'}", file=sys.stderr)
+        if validation_mode is not None:
+            print(f"validation_mode={validation_mode}", file=sys.stderr)
+        if validation_source is not None:
+            print(f"validation_source={validation_source}", file=sys.stderr)
         if envelope is not None:
             print(f"schema_version={envelope['schema_version']}", file=sys.stderr)
         if planned_remote_target is not None:
@@ -474,12 +484,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"local_path={local_path}")
     print(f"sha256={local_sha256}")
-    if emission is not None:
-        print(f"validation_mode={emission['validation_mode']}")
-        print(f"schema_path={emission['schema_path'] or 'fallback-practical-validation'}")
-    else:
-        print("validation_mode=canonical_or_practical_local_validation")
-        print(f"schema_path={args.schema_path or 'local-envelope-validation'}")
+    print(f"validation_mode={validation_mode}")
+    print(f"validation_source={validation_source}")
     print(f"schema_version={envelope['schema_version']}")
     print(f"remote_target={remote_target}")
     print(f"remote_host_source={target.host_source}")

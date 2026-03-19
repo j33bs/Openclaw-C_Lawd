@@ -15,7 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 from interbeing_contract.submit_task_v0 import (  # noqa: E402
     DEFAULT_FILENAME,
     build_submit_task_envelope,
-    resolve_task_envelope_schema_path,
+    resolve_submit_task_validation_provenance,
     write_submit_task_envelope,
 )
 
@@ -129,11 +129,8 @@ def resolve_handoff_paths(
     return outgoing_path, archive_path
 
 
-def resolve_validation_mode(schema_path: Path | str | None = None) -> tuple[str, Path | None]:
-    resolved = resolve_task_envelope_schema_path(schema_path)
-    if resolved is None:
-        return "fallback_practical_validation", None
-    return "canonical_schema", resolved
+def resolve_validation_provenance(schema_path: Path | str | None = None):
+    return resolve_submit_task_validation_provenance(schema_path)
 
 
 def _assert_writable(path: Path, *, allow_overwrite: bool) -> None:
@@ -159,7 +156,7 @@ def emit_dali_handoff(
     created_at: str | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root) if repo_root is not None else REPO_ROOT
-    validation_mode, resolved_schema_path = resolve_validation_mode(schema_path)
+    validation_provenance = resolve_validation_provenance(schema_path)
     envelope = build_submit_task_envelope(
         requestor=requestor,
         target_node=target_node,
@@ -167,7 +164,7 @@ def emit_dali_handoff(
         task_id=task_id,
         correlation_id=correlation_id,
         created_at=created_at,
-        schema_path=resolved_schema_path,
+        schema_path=validation_provenance.schema_path,
     )
     outgoing_path, archive_path = resolve_handoff_paths(
         repo_root=root,
@@ -185,21 +182,21 @@ def emit_dali_handoff(
     final_outgoing_path = write_submit_task_envelope(
         envelope,
         output_path=outgoing_path,
-        schema_path=resolved_schema_path,
+        schema_path=validation_provenance.schema_path,
     )
     final_archive_path = None
     if archive_path is not None:
         final_archive_path = write_submit_task_envelope(
             envelope,
             output_path=archive_path,
-            schema_path=resolved_schema_path,
+            schema_path=validation_provenance.schema_path,
         )
     return {
         "envelope": envelope,
         "outgoing_path": final_outgoing_path,
         "archive_path": final_archive_path,
-        "validation_mode": validation_mode,
-        "schema_path": resolved_schema_path,
+        "validation_mode": validation_provenance.mode,
+        "validation_source": validation_provenance.source,
     }
 
 
@@ -264,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
 
     envelope = result["envelope"]
     print(f"validation_mode={result['validation_mode']}")
-    print(f"schema_path={result['schema_path'] or 'fallback-practical-validation'}")
+    print(f"validation_source={result['validation_source']}")
     print(f"outgoing_path={result['outgoing_path']}")
     if result["archive_path"] is not None:
         print(f"archive_path={result['archive_path']}")

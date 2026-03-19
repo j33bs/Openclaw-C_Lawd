@@ -29,9 +29,10 @@ If this boundary grows beyond placeholder status, the shared ontology and protoc
 ## Local Envelope Emission
 
 - `interbeing_contract/submit_task_v0.py` is a local C_Lawd-side adapter for emitting `submit_task` envelopes only.
-- It builds and writes envelope JSON locally, can validate against a canonical `task-envelope.v0.json` when that schema is available, and supports an explicit handoff path for local file-based consumption.
+- In this repo, canonical validation is code-backed by `interbeing_contract.submit_task_v0` unless an operator explicitly points the adapter at a real `task-envelope.v0.json` schema file.
+- It builds and writes envelope JSON locally, can validate against an explicit canonical `task-envelope.v0.json` when one is provided, and supports an explicit handoff path for local file-based consumption.
 - The schema file name remains `task-envelope.v0.json`, but the emitted envelope field must be `\"schema_version\": \"v0\"`.
-- `scripts/dev/emit_dali_handoff.py` is the operator-facing workflow entrypoint. By default it emits to `handoff/outgoing/dali/`, archives to `handoff/archive/dali/`, and reports whether validation used a canonical schema or the local practical fallback.
+- `scripts/dev/emit_dali_handoff.py` is the operator-facing workflow entrypoint. By default it emits to `handoff/outgoing/dali/`, archives to `handoff/archive/dali/`, and reports `validation_mode` plus `validation_source` so runtime provenance stays truthful.
 - `scripts/dev/send_to_dali_v0.py` layers on top of that emitter to either emit-and-send or send an existing envelope to Dali via `scp`, targeting `handoff/incoming/dali/` by default, printing the emitted file `sha256`, and failing closed on missing config, invalid paths, or transfer errors.
 - Optional operator ergonomics such as `--event-type` stay adapter-local inside the emitted `payload`; they do not redefine the canonical top-level v0 envelope semantics.
 - Transport, auth/signing, and Dali-side consumption remain separate and deferred.

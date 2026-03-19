@@ -92,7 +92,10 @@ class SendToDaliV0Tests(unittest.TestCase):
             payload = SEND_TO_DALI.validate_local_envelope_file(created_files[0])
             self.assertEqual(payload["schema_version"], "v0")
             self.assertEqual(payload["payload"]["event_type"], "task.submitted")
-            self.assertIn("sha256=", stdout.getvalue())
+            output = stdout.getvalue()
+            self.assertIn("sha256=", output)
+            self.assertIn("validation_mode=canonical_contract_validation", output)
+            self.assertIn("validation_source=interbeing_contract.submit_task_v0", output)
 
     def test_validate_local_envelope_file_rejects_missing_path(self) -> None:
         missing = Path("/tmp/nonexistent-send-to-dali-v0.task-envelope.v0.json")
@@ -114,8 +117,13 @@ class SendToDaliV0Tests(unittest.TestCase):
             with mock.patch.object(SEND_TO_DALI, "check_remote_intake"), mock.patch.object(
                 SEND_TO_DALI, "transfer_envelope", return_value=f"dali:handoff/incoming/dali/{source_path.name}"
             ), mock.patch.object(SEND_TO_DALI, "discover_default_dali_alias", return_value="dali"):
-                exit_code = SEND_TO_DALI.main(["--file", str(source_path), "--dry-run"])
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    exit_code = SEND_TO_DALI.main(["--file", str(source_path), "--dry-run"])
             self.assertEqual(exit_code, 0)
+            output = stdout.getvalue()
+            self.assertIn("validation_mode=canonical_contract_validation", output)
+            self.assertIn("validation_source=interbeing_contract.submit_task_v0", output)
 
     def test_check_remote_intake_uses_explicit_remote_port(self) -> None:
         target = SEND_TO_DALI.RemoteTarget(
