@@ -102,6 +102,11 @@ class EmitInterbeingV0Test(unittest.TestCase):
                 chain_id="chain-demo-001",
                 hop_count=1,
                 max_hops=3,
+                task_class="executor_work",
+                acceptance_criteria=["produce summary", "cite evidence"],
+                review_mode="peer_review",
+                worker_limit=2,
+                execution_notes="Prefer concise operator-visible output.",
                 child_task_id="child-local-001",
                 allow_overwrite=False,
                 remote_host=None,
@@ -125,6 +130,16 @@ class EmitInterbeingV0Test(unittest.TestCase):
             self.assertEqual(envelope["payload"]["event_type"], "task.submitted")
             self.assertEqual(envelope["payload"]["local_dispatch"]["source_role"], "planner")
             self.assertEqual(envelope["payload"]["local_dispatch"]["target_role"], "executor")
+            self.assertEqual(
+                envelope["payload"]["local_dispatch"]["task_contract"],
+                {
+                    "task_class": "executor_work",
+                    "acceptance_criteria": ["produce summary", "cite evidence"],
+                    "review_mode": "peer_review",
+                    "worker_limit": 2,
+                    "execution_notes": "Prefer concise operator-visible output.",
+                },
+            )
             self.assertNotIn("child_task_id", output_path.read_text(encoding="utf-8"))
 
             evidence_path = Path(result["evidence_path"])
@@ -172,6 +187,11 @@ class EmitInterbeingV0Test(unittest.TestCase):
                     chain_id="chain-remote-001",
                     hop_count=1,
                     max_hops=3,
+                    task_class="planner_child",
+                    acceptance_criteria=["preserve lineage"],
+                    review_mode="peer_review",
+                    worker_limit=1,
+                    execution_notes="Keep adapter-local task contract metadata.",
                     child_task_id="child-local-remote-001",
                     allow_overwrite=False,
                     remote_host=None,
@@ -198,6 +218,16 @@ class EmitInterbeingV0Test(unittest.TestCase):
             envelope = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(envelope["task_id"], "task-remote-001")
             self.assertEqual(envelope["payload"]["local_dispatch"]["source_role"], "planner")
+            self.assertEqual(
+                envelope["payload"]["local_dispatch"]["task_contract"],
+                {
+                    "task_class": "planner_child",
+                    "acceptance_criteria": ["preserve lineage"],
+                    "review_mode": "peer_review",
+                    "worker_limit": 1,
+                    "execution_notes": "Keep adapter-local task contract metadata.",
+                },
+            )
             self.assertNotIn("child_task_id", output_path.read_text(encoding="utf-8"))
 
             evidence_path = Path(result["evidence_path"])

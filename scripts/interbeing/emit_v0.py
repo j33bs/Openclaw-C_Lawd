@@ -132,6 +132,11 @@ def _local_dispatch_requested(args: argparse.Namespace) -> bool:
             args.chain_id,
             args.hop_count,
             args.max_hops,
+            args.task_class,
+            args.acceptance_criteria,
+            args.review_mode,
+            args.worker_limit,
+            args.execution_notes,
         )
     )
 
@@ -161,6 +166,11 @@ def _emit_envelope(
     chain_id: str | None,
     hop_count: int | None,
     max_hops: int | None,
+    task_class: str | None,
+    acceptance_criteria: list[str] | None,
+    review_mode: str | None,
+    worker_limit: int | None,
+    execution_notes: str | None,
     payload_json: str | None,
     payload_file: str | None,
     task_id: str | None,
@@ -182,11 +192,11 @@ def _emit_envelope(
         parent_task_id=parent_task_id if include_local_dispatch else None,
         hop_count=hop_count if include_local_dispatch else None,
         max_hops=max_hops if include_local_dispatch else None,
-        task_class=None,
-        acceptance_criteria=None,
-        review_mode=None,
-        worker_limit=None,
-        execution_notes=None,
+        task_class=task_class if include_local_dispatch else None,
+        acceptance_criteria=acceptance_criteria if include_local_dispatch else None,
+        review_mode=review_mode if include_local_dispatch else None,
+        worker_limit=worker_limit if include_local_dispatch else None,
+        execution_notes=execution_notes if include_local_dispatch else None,
         payload_json=payload_json,
         payload_file=payload_file,
         task_id=task_id,
@@ -227,6 +237,11 @@ def emit_interbeing_task(
     chain_id: str | None,
     hop_count: int | None,
     max_hops: int | None,
+    task_class: str | None,
+    acceptance_criteria: list[str] | None,
+    review_mode: str | None,
+    worker_limit: int | None,
+    execution_notes: str | None,
     child_task_id: str | None,
     allow_overwrite: bool,
     remote_host: str | None,
@@ -253,6 +268,11 @@ def emit_interbeing_task(
         chain_id=chain_id,
         hop_count=hop_count,
         max_hops=max_hops,
+        task_class=task_class,
+        acceptance_criteria=acceptance_criteria,
+        review_mode=review_mode,
+        worker_limit=worker_limit,
+        execution_notes=execution_notes,
         payload_json=payload_json,
         payload_file=payload_file,
         task_id=task_id,
@@ -361,6 +381,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chain-id", help="Adapter-local chain id.")
     parser.add_argument("--hop-count", type=int, help="Adapter-local hop count.")
     parser.add_argument("--max-hops", type=int, help="Adapter-local max hops.")
+    parser.add_argument("--task-class", help="Adapter-local task class.")
+    parser.add_argument(
+        "--acceptance-criterion",
+        dest="acceptance_criteria",
+        action="append",
+        help="Repeatable adapter-local acceptance criterion.",
+    )
+    parser.add_argument("--review-mode", help="Adapter-local review mode.")
+    parser.add_argument("--worker-limit", type=int, help="Adapter-local worker limit.")
+    parser.add_argument("--execution-notes", help="Adapter-local execution notes.")
     parser.add_argument(
         "--child-task-id",
         help="Local-only child task id recorded in audit evidence, not emitted into the canonical envelope.",
@@ -408,6 +438,11 @@ def main(argv: list[str] | None = None) -> int:
             chain_id=args.chain_id,
             hop_count=args.hop_count,
             max_hops=args.max_hops,
+            task_class=args.task_class,
+            acceptance_criteria=args.acceptance_criteria,
+            review_mode=args.review_mode,
+            worker_limit=args.worker_limit,
+            execution_notes=args.execution_notes,
             child_task_id=args.child_task_id,
             allow_overwrite=args.allow_overwrite,
             remote_host=args.remote_host,
