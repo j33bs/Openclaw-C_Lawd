@@ -100,9 +100,11 @@ USER.md
 /local/
 package-lock.json
 .claude/
+.openclaw/
 .agents/
 .agents
 .agent/
+workspace/state/
 skills-lock.json
 
 # Local iOS signing overrides
