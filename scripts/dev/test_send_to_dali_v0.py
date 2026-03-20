@@ -4,7 +4,7 @@ import importlib.util
 import io
 import sys
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -97,7 +97,9 @@ class SendToDaliV0Tests(unittest.TestCase):
                 )
 
     def test_resolve_remote_target_uses_discovered_alias_and_default_path(self) -> None:
-        with mock.patch.object(SEND_TO_DALI, "discover_default_dali_alias", return_value="dali"):
+        with mock.patch.object(SEND_TO_DALI, "_first_config_value", return_value=(None, None)), mock.patch.object(
+            SEND_TO_DALI, "discover_default_dali_alias", return_value="dali"
+        ):
             target = SEND_TO_DALI.resolve_remote_target(
                 remote_host=None,
                 remote_user=None,
@@ -312,7 +314,8 @@ class SendToDaliV0Tests(unittest.TestCase):
         self.assertEqual(remote_target, f"runner@cli-host:/srv/handoff/incoming/dali/{source_path.name}")
 
     def test_file_mode_rejects_emit_only_adapter_fields(self) -> None:
-        with self.assertRaises(SystemExit) as exc:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as exc:
             SEND_TO_DALI.main(
                 [
                     "--file",

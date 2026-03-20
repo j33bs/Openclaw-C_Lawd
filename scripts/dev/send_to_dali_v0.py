@@ -458,7 +458,9 @@ def emit_local_envelope(
     archive: bool,
     repo_root: Path,
 ) -> dict[str, Any]:
-    emitter = _load_emitter_module(repo_root / "scripts" / "dev" / "emit_dali_handoff.py")
+    # Load the emitter from this checkout. `repo_root` describes the handoff
+    # layout for emitted artifacts, not an alternate source tree for helpers.
+    emitter = _load_emitter_module(EMITTER_SCRIPT_PATH)
     if not hasattr(emitter, "load_extra_payload") or not hasattr(emitter, "emit_dali_handoff"):
         raise RuntimeError("existing emitter script does not expose the expected helper functions")
     extra_payload = emitter.load_extra_payload(payload_json=payload_json, payload_file=payload_file)
