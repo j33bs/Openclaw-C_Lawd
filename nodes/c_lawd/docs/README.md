@@ -2,8 +2,14 @@
 
 Canonical node: `c_lawd` (legacy `system2` / `system-2`).
 
-For the current governed System-2 evidence workflow and audits, see:
-- `workspace/docs/governance/SYSTEM2-EVIDENCE-WORKFLOW.md`
-- `workspace/docs/audits/`
+For the active continuity and cutover surfaces, see:
+
+- `doctrine/runtime-kernel.md`
+- `ops/cutover.md`
+- `ops/config-rebind.md`
+
+Legacy root snapshots from the old workspace are archived at:
+
+- `nodes/c_lawd/legacy-root/`
 
 Legacy "System-2" filenames are retained for one compatibility cycle.

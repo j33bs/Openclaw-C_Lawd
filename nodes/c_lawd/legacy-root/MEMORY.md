@@ -55,8 +55,8 @@ _Last updated: 2026-03-17_
 ## Technical Notes
 
 - **Runtime:** main model is actively user-switched as needed; current defaults should be treated as operational, not doctrinal.
-- **TACTI layer:** relationship, arousal, and pattern-tracking modules remain active in the workspace memory layer; current file placement under `workspace/memory/` is compatibility-driven during decoupling.
-- **Dashboard:** Source UI / Dali tasking state is operator-configured; treat it as live only when the current surface returns a concrete backend receipt or id.
+- **Modules:** `tacti_core.py`, `relationship_tracker.py`, `arousal_tracker.py` active in `workspace/memory/`.
+- **Dashboard:** Source UI / Dali tasking surface is active at `http://100.113.160.1:18990` (Tailscale primary).
 - **Current runtime note:** QMD MCP on port 8181 has been a recurring ops concern.
 - **Model status:** GPU pruned; `ollama qwen3.5:2b` retained as active local model.
 
@@ -171,7 +171,7 @@ Requires manual verification per track - checking what matches between Beatport 
 
 - Distilled at: 2026-03-07T15:00:33Z
 - Source files:
-  - memory/2026-03-07.md
+  - /Users/heathyeager/clawd/memory/2026-03-07.md
 - Distinct events:
   - Connection refused — Dali's messenger server not responding
   - Message: "Hey Dali! Quick check-in — how's it going? Any thoughts turning over?"

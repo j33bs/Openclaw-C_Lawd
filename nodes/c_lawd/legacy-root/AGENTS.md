@@ -14,7 +14,6 @@ Before doing anything else:
 2. Read `USER.md` — this is who you're helping
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
-5. If present, read `nodes/c_lawd/CONVERSATION_KERNEL.md` and `nodes/c_lawd/MEMORY.md` for node-specific doctrine and pinned state
 
 Don't ask permission. Just do it.
 
@@ -26,8 +25,6 @@ You wake up fresh each session. These files are your continuity:
 - **Long-term:** `MEMORY.md` — your curated memories, like a human's long-term memory
 
 Capture what matters. Decisions, context, things to remember. Skip the secrets unless asked to keep them.
-
-Node-specific pinned state lives in `nodes/c_lawd/MEMORY.md`. Read it directly when node doctrine, truthfulness rules, Source UI grounding, or c_lawd-specific blockers are relevant; do not assume memory tools will surface it automatically.
 
 ### 🧠 MEMORY.md - Your Long-Term Memory
 
