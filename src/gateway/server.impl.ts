@@ -711,6 +711,11 @@ export async function startGatewayServer(
 
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
+  const refreshGatewayHealth = (opts?: { probe?: boolean }) =>
+    refreshGatewayHealthSnapshot({
+      ...opts,
+      runtimeSnapshot: getRuntimeSnapshot(),
+    });
 
   if (!minimalTestGateway) {
     const machineDisplayName = await getMachineDisplayName();
@@ -765,7 +770,7 @@ export async function startGatewayServer(
       nodeSendToAllSubscribed,
       getPresenceVersion,
       getHealthVersion,
-      refreshGatewayHealthSnapshot,
+      refreshGatewayHealthSnapshot: refreshGatewayHealth,
       logHealth,
       dedupe,
       chatAbortControllers,
@@ -881,7 +886,7 @@ export async function startGatewayServer(
     execApprovalManager,
     loadGatewayModelCatalog,
     getHealthCache,
-    refreshHealthSnapshot: refreshGatewayHealthSnapshot,
+    refreshHealthSnapshot: refreshGatewayHealth,
     logHealth,
     logGateway: log,
     incrementPresenceVersion,

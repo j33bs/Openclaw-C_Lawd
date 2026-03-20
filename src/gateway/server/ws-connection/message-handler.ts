@@ -74,7 +74,6 @@ import {
   getHealthCache,
   getHealthVersion,
   incrementPresenceVersion,
-  refreshGatewayHealthSnapshot,
 } from "../health-state.js";
 import type { GatewayWsClient } from "../ws-types.js";
 import { resolveConnectAuthDecision, resolveConnectAuthState } from "./auth-context.js";
@@ -1053,9 +1052,11 @@ export function attachGatewayWsMessageHandler(params: {
         });
 
         send({ type: "res", id: frame.id, ok: true, payload: helloOk });
-        void refreshGatewayHealthSnapshot({ probe: true }).catch((err) =>
-          logHealth.error(`post-connect health refresh failed: ${formatError(err)}`),
-        );
+        void buildRequestContext()
+          .refreshHealthSnapshot({ probe: true })
+          .catch((err) =>
+            logHealth.error(`post-connect health refresh failed: ${formatError(err)}`),
+          );
         return;
       }
 

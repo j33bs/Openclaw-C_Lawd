@@ -1,6 +1,7 @@
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { resolveChannelDefaultAccountId } from "../channels/plugins/helpers.js";
 import { getChannelPlugin, listChannelPlugins } from "../channels/plugins/index.js";
+import { buildChannelAccountSnapshot } from "../channels/plugins/status.js";
 import type { ChannelAccountSnapshot, ChannelPlugin } from "../channels/plugins/types.js";
 import { inspectReadOnlyChannelAccount } from "../channels/read-only-account-inspect.js";
 import { withProgress } from "../cli/progress.js";
@@ -43,6 +44,11 @@ export type AgentHealthSummary = {
   isDefault: boolean;
   heartbeat: AgentHeartbeatSummary;
   sessions: HealthSummary["sessions"];
+};
+
+export type HealthRuntimeSnapshot = {
+  channels?: Partial<Record<string, ChannelAccountSnapshot>>;
+  channelAccounts?: Partial<Record<string, Record<string, ChannelAccountSnapshot>>>;
 };
 
 export type HealthSummary = {
@@ -320,6 +326,23 @@ const isProbeFailure = (summary: ChannelAccountHealthSummary): boolean => {
   return ok === false;
 };
 
+function resolveHealthRuntimeAccountSnapshot(params: {
+  runtimeSnapshot?: HealthRuntimeSnapshot;
+  channelId: string;
+  accountId: string;
+  defaultAccountId: string;
+}): ChannelAccountSnapshot | undefined {
+  const runtimeAccounts = params.runtimeSnapshot?.channelAccounts?.[params.channelId];
+  const direct = runtimeAccounts?.[params.accountId];
+  if (direct) {
+    return direct;
+  }
+  if (params.accountId === params.defaultAccountId) {
+    return params.runtimeSnapshot?.channels?.[params.channelId];
+  }
+  return undefined;
+}
+
 export const formatHealthChannelLines = (
   summary: HealthSummary,
   opts: {
@@ -419,6 +442,7 @@ export const formatHealthChannelLines = (
 export async function getHealthSnapshot(params?: {
   timeoutMs?: number;
   probe?: boolean;
+  runtimeSnapshot?: HealthRuntimeSnapshot;
 }): Promise<HealthSummary> {
   const timeoutMs = params?.timeoutMs;
   const cfg = loadConfig();
@@ -522,14 +546,19 @@ export async function getHealthSnapshot(params?: {
         debugHealth("probe.bot", { channel: plugin.id, accountId, username: bot.username });
       }
 
-      const snapshot: ChannelAccountSnapshot = {
+      const runtime = resolveHealthRuntimeAccountSnapshot({
+        runtimeSnapshot: params?.runtimeSnapshot,
+        channelId: plugin.id,
         accountId,
-        enabled,
-        configured,
-      };
-      if (probe !== undefined) {
-        snapshot.probe = probe;
-      }
+        defaultAccountId,
+      });
+      const snapshot = await buildChannelAccountSnapshot({
+        plugin,
+        cfg,
+        accountId,
+        runtime,
+        probe,
+      });
       if (lastProbeAt) {
         snapshot.lastProbeAt = lastProbeAt;
       }
@@ -546,16 +575,14 @@ export async function getHealthSnapshot(params?: {
         summary && typeof summary === "object"
           ? (summary as ChannelAccountHealthSummary)
           : ({
-              accountId,
-              configured,
-              probe,
-              lastProbeAt,
+              ...snapshot,
+              configured: snapshot.configured ?? configured,
             } satisfies ChannelAccountHealthSummary);
       if (record.configured === undefined) {
-        record.configured = configured;
+        record.configured = snapshot.configured ?? configured;
       }
-      if (record.lastProbeAt === undefined && lastProbeAt) {
-        record.lastProbeAt = lastProbeAt;
+      if (record.lastProbeAt === undefined && snapshot.lastProbeAt) {
+        record.lastProbeAt = snapshot.lastProbeAt;
       }
       record.accountId = accountId;
       accountSummaries[accountId] = record;
