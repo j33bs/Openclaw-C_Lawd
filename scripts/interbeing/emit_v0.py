@@ -18,7 +18,6 @@ SEND_HELPER_PATH = REPO_ROOT / "scripts" / "dev" / "send_to_dali_v0.py"
 DEFAULT_DALI_REPO_NAME = "openclaw-dali"
 DEFAULT_INTERBEING_REPO_NAME = "openclaw-interbeing"
 DEFAULT_INTAKE_ENV = "OPENCLAW_DALI_INTAKE_DIR"
-LEGACY_INTAKE_ENV = "OPENCLAW_INTERBEING_DALI_INTAKE_PATH"
 EVIDENCE_DIR_RELATIVE = Path("workspace") / "audit" / "_evidence" / "interbeing-emitter-v0"
 EVIDENCE_FILENAME = "last-run.json"
 
@@ -67,11 +66,11 @@ def _resolve_existing_dir(path_value: str | Path, *, field_name: str) -> Path:
     return candidate
 
 
-def resolve_intake_dir(
+def resolve_local_intake_dir(
     *,
     intake_dir: str | None,
     repo_root: Path,
-) -> PathResolution:
+) -> PathResolution | None:
     if intake_dir:
         return PathResolution(
             path=_resolve_existing_dir(intake_dir, field_name="intake dir"),
@@ -85,17 +84,14 @@ def resolve_intake_dir(
             source=DEFAULT_INTAKE_ENV,
         )
 
-    legacy_intake_dir = os.getenv(LEGACY_INTAKE_ENV)
-    if legacy_intake_dir:
+    sibling_intake_dir = default_dali_intake_dir(repo_root=repo_root)
+    if sibling_intake_dir.exists():
         return PathResolution(
-            path=_resolve_existing_dir(legacy_intake_dir, field_name=LEGACY_INTAKE_ENV),
-            source=LEGACY_INTAKE_ENV,
+            path=_resolve_existing_dir(sibling_intake_dir, field_name="default sibling Dali intake"),
+            source=f"default sibling {DEFAULT_DALI_REPO_NAME}",
         )
 
-    return PathResolution(
-        path=_resolve_existing_dir(default_dali_intake_dir(repo_root=repo_root), field_name="default sibling Dali intake"),
-        source=f"default sibling {DEFAULT_DALI_REPO_NAME}",
-    )
+    return None
 
 
 def resolve_schema_path(
@@ -136,11 +132,6 @@ def _local_dispatch_requested(args: argparse.Namespace) -> bool:
             args.chain_id,
             args.hop_count,
             args.max_hops,
-            args.task_class,
-            args.acceptance_criteria,
-            args.review_mode,
-            args.worker_limit,
-            args.execution_notes,
         )
     )
 
@@ -154,6 +145,66 @@ def _write_evidence(
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     return destination
+
+
+def _emit_envelope(
+    *,
+    emitted_title: str,
+    prompt: str,
+    requestor: str,
+    target_node: str,
+    event_type: str | None,
+    include_local_dispatch: bool,
+    source_role: str | None,
+    target_role: str | None,
+    parent_task_id: str | None,
+    chain_id: str | None,
+    hop_count: int | None,
+    max_hops: int | None,
+    payload_json: str | None,
+    payload_file: str | None,
+    task_id: str | None,
+    correlation_id: str | None,
+    output_dir: str | None,
+    schema_path: PathResolution | None,
+    allow_overwrite: bool,
+    repo_root: Path,
+) -> tuple[dict[str, Any], Path, dict[str, Any], str]:
+    emission = SEND_TO_DALI.emit_local_envelope(
+        title=emitted_title,
+        instructions=prompt,
+        requestor=requestor,
+        target_node=target_node,
+        event_type=event_type,
+        target_role=target_role if include_local_dispatch else None,
+        source_role=source_role if include_local_dispatch else None,
+        chain_id=chain_id if include_local_dispatch else None,
+        parent_task_id=parent_task_id if include_local_dispatch else None,
+        hop_count=hop_count if include_local_dispatch else None,
+        max_hops=max_hops if include_local_dispatch else None,
+        task_class=None,
+        acceptance_criteria=None,
+        review_mode=None,
+        worker_limit=None,
+        execution_notes=None,
+        payload_json=payload_json,
+        payload_file=payload_file,
+        task_id=task_id,
+        correlation_id=correlation_id,
+        output_path=None,
+        output_dir=output_dir,
+        schema_path=str(schema_path.path) if schema_path else None,
+        allow_overwrite=allow_overwrite,
+        archive=False,
+        repo_root=repo_root,
+    )
+    envelope_path = Path(emission["outgoing_path"])
+    envelope = SEND_TO_DALI.validate_local_envelope_file(
+        envelope_path,
+        schema_path=str(schema_path.path) if schema_path else None,
+    )
+    sha256 = SEND_TO_DALI.compute_sha256(envelope_path)
+    return emission, envelope_path, envelope, sha256
 
 
 def emit_interbeing_task(
@@ -176,61 +227,82 @@ def emit_interbeing_task(
     chain_id: str | None,
     hop_count: int | None,
     max_hops: int | None,
-    task_class: str | None,
-    acceptance_criteria: list[str] | None,
-    review_mode: str | None,
-    worker_limit: int | None,
-    execution_notes: str | None,
     child_task_id: str | None,
     allow_overwrite: bool,
+    remote_host: str | None,
+    remote_user: str | None,
+    remote_port: int | None,
+    remote_dir: str | None,
+    remote_path: str | None,
+    dry_run: bool,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    resolved_intake_dir = resolve_intake_dir(intake_dir=intake_dir, repo_root=repo_root)
+    resolved_intake_dir = resolve_local_intake_dir(intake_dir=intake_dir, repo_root=repo_root)
     resolved_schema = resolve_schema_path(schema_path=schema_path, repo_root=repo_root)
     emitted_title = title or _default_title(prompt=prompt, task_id=task_id)
-
-    emission = SEND_TO_DALI.emit_local_envelope(
-        title=emitted_title,
-        instructions=prompt,
+    emission, envelope_path, envelope, sha256 = _emit_envelope(
+        emitted_title=emitted_title,
+        prompt=prompt,
         requestor=requestor,
         target_node=target_node,
         event_type=event_type,
-        target_role=target_role if include_local_dispatch else None,
-        source_role=source_role if include_local_dispatch else None,
-        chain_id=chain_id if include_local_dispatch else None,
-        parent_task_id=parent_task_id if include_local_dispatch else None,
-        hop_count=hop_count if include_local_dispatch else None,
-        max_hops=max_hops if include_local_dispatch else None,
-        task_class=task_class if include_local_dispatch else None,
-        acceptance_criteria=acceptance_criteria if include_local_dispatch else None,
-        review_mode=review_mode if include_local_dispatch else None,
-        worker_limit=worker_limit if include_local_dispatch else None,
-        execution_notes=execution_notes if include_local_dispatch else None,
+        include_local_dispatch=include_local_dispatch,
+        source_role=source_role,
+        target_role=target_role,
+        parent_task_id=parent_task_id,
+        chain_id=chain_id,
+        hop_count=hop_count,
+        max_hops=max_hops,
         payload_json=payload_json,
         payload_file=payload_file,
         task_id=task_id,
         correlation_id=correlation_id,
-        output_path=None,
-        output_dir=str(resolved_intake_dir.path),
-        schema_path=str(resolved_schema.path) if resolved_schema else None,
+        output_dir=str(resolved_intake_dir.path) if resolved_intake_dir else None,
+        schema_path=resolved_schema,
         allow_overwrite=allow_overwrite,
-        archive=False,
         repo_root=repo_root,
     )
 
-    envelope_path = Path(emission["outgoing_path"])
-    envelope = SEND_TO_DALI.validate_local_envelope_file(
-        envelope_path,
-        schema_path=str(resolved_schema.path) if resolved_schema else None,
-    )
-    sha256 = SEND_TO_DALI.compute_sha256(envelope_path)
+    delivery_mode = "local_intake_write"
+    transfer_result = "direct-write"
+    remote_target = None
+    remote_host_source = None
+    remote_path_source = None
+    remote_port_source = None
+
+    if resolved_intake_dir is None:
+        remote_path_value = remote_dir or remote_path
+        remote_path_source = "cli --remote-dir" if remote_dir else ("cli --remote-path" if remote_path else None)
+        target = SEND_TO_DALI.resolve_remote_target(
+            remote_host=remote_host,
+            remote_user=remote_user,
+            remote_port=remote_port,
+            remote_path=remote_path_value,
+            remote_path_source_override=remote_path_source,
+            repo_root=repo_root,
+        )
+        SEND_TO_DALI.check_remote_intake(target)
+        remote_target = SEND_TO_DALI.transfer_envelope(envelope_path, target=target, dry_run=dry_run)
+        delivery_mode = "remote_scp"
+        transfer_result = "dry-run" if dry_run else "success"
+        remote_host_source = target.host_source
+        remote_path_source = target.path_source
+        remote_port_source = target.port_source
+
     evidence = {
         "task_id": envelope["task_id"],
         "correlation_id": envelope["correlation_id"],
         "requestor": envelope["requestor"],
         "target_node": envelope["target_node"],
-        "intake_path": str(envelope_path),
-        "intake_dir_source": resolved_intake_dir.source,
+        "delivery_mode": delivery_mode,
+        "transfer_result": transfer_result,
+        "output_path": str(envelope_path),
+        "intake_path": str(envelope_path) if resolved_intake_dir else None,
+        "intake_dir_source": resolved_intake_dir.source if resolved_intake_dir else None,
+        "remote_target": remote_target,
+        "remote_host_source": remote_host_source,
+        "remote_path_source": remote_path_source,
+        "remote_port_source": remote_port_source,
         "validation_mode": emission["validation_mode"],
         "validation_source": emission["validation_source"],
         "schema_path": str(resolved_schema.path) if resolved_schema else None,
@@ -246,10 +318,16 @@ def emit_interbeing_task(
         "correlation_id": envelope["correlation_id"],
         "output_path": envelope_path,
         "sha256": sha256,
+        "delivery_mode": delivery_mode,
+        "transfer_result": transfer_result,
         "validation_mode": emission["validation_mode"],
         "validation_source": emission["validation_source"],
-        "intake_dir": resolved_intake_dir.path,
-        "intake_dir_source": resolved_intake_dir.source,
+        "intake_dir": resolved_intake_dir.path if resolved_intake_dir else None,
+        "intake_dir_source": resolved_intake_dir.source if resolved_intake_dir else None,
+        "remote_target": remote_target,
+        "remote_host_source": remote_host_source,
+        "remote_path_source": remote_path_source,
+        "remote_port_source": remote_port_source,
         "schema_path": resolved_schema.path if resolved_schema else None,
         "schema_path_source": resolved_schema.source if resolved_schema else None,
         "evidence_path": final_evidence_path,
@@ -267,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--correlation-id", help="Optional explicit correlation id.")
     parser.add_argument("--requestor", default="c_lawd", help="Submitting node id. Default: c_lawd.")
     parser.add_argument("--target-node", default="dali", help="Target node id. Default: dali.")
-    parser.add_argument("--intake-dir", help="Absolute or relative Dali intake directory override.")
+    parser.add_argument("--intake-dir", help="Absolute or relative local Dali intake directory override.")
     parser.add_argument("--schema-path", help="Optional explicit schema path.")
     parser.add_argument("--payload-json", help="Additional payload fields as a JSON object string.")
     parser.add_argument("--payload-file", help="Path to a JSON file containing additional payload fields.")
@@ -283,16 +361,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chain-id", help="Adapter-local chain id.")
     parser.add_argument("--hop-count", type=int, help="Adapter-local hop count.")
     parser.add_argument("--max-hops", type=int, help="Adapter-local max hops.")
-    parser.add_argument("--task-class", help="Adapter-local task class.")
-    parser.add_argument(
-        "--acceptance-criterion",
-        dest="acceptance_criteria",
-        action="append",
-        help="Repeatable adapter-local acceptance criterion.",
-    )
-    parser.add_argument("--review-mode", help="Adapter-local review mode.")
-    parser.add_argument("--worker-limit", type=int, help="Adapter-local worker limit.")
-    parser.add_argument("--execution-notes", help="Adapter-local execution notes.")
     parser.add_argument(
         "--child-task-id",
         help="Local-only child task id recorded in audit evidence, not emitted into the canonical envelope.",
@@ -300,8 +368,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-overwrite",
         action="store_true",
-        help="Allow overwriting an existing task file in the Dali intake directory.",
+        help="Allow overwriting an existing local task file.",
     )
+    parser.add_argument("--remote-host", help="Remote ssh host or alias for Dali fallback delivery.")
+    parser.add_argument("--remote-user", help="Optional remote ssh username for Dali fallback delivery.")
+    parser.add_argument("--remote-port", type=int, help="Optional remote ssh/scp port for Dali fallback delivery.")
+    parser.add_argument("--remote-dir", help="Remote Dali intake directory override for ssh/scp delivery.")
+    parser.add_argument("--remote-path", help=argparse.SUPPRESS)
+    parser.add_argument("--dry-run", action="store_true", help="Resolve and validate remote ssh/scp delivery without transferring the file.")
     return parser
 
 
@@ -311,6 +385,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if _local_dispatch_requested(args) and not args.include_local_dispatch:
         parser.error("local dispatch fields require --include-local-dispatch")
+    if args.remote_dir and args.remote_path:
+        parser.error("--remote-dir and --remote-path are mutually exclusive")
 
     try:
         result = emit_interbeing_task(
@@ -332,13 +408,14 @@ def main(argv: list[str] | None = None) -> int:
             chain_id=args.chain_id,
             hop_count=args.hop_count,
             max_hops=args.max_hops,
-            task_class=args.task_class,
-            acceptance_criteria=args.acceptance_criteria,
-            review_mode=args.review_mode,
-            worker_limit=args.worker_limit,
-            execution_notes=args.execution_notes,
             child_task_id=args.child_task_id,
             allow_overwrite=args.allow_overwrite,
+            remote_host=args.remote_host,
+            remote_user=args.remote_user,
+            remote_port=args.remote_port,
+            remote_dir=args.remote_dir,
+            remote_path=args.remote_path,
+            dry_run=args.dry_run,
         )
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -346,12 +423,22 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"task_id={result['task_id']}")
     print(f"correlation_id={result['correlation_id']}")
-    print(f"intake_dir={result['intake_dir']}")
-    print(f"intake_dir_source={result['intake_dir_source']}")
+    print(f"delivery_mode={result['delivery_mode']}")
     print(f"output_path={result['output_path']}")
     print(f"sha256={result['sha256']}")
     print(f"validation_mode={result['validation_mode']}")
     print(f"validation_source={result['validation_source']}")
+    if result["intake_dir"] is not None:
+        print(f"intake_dir={result['intake_dir']}")
+        print(f"intake_dir_source={result['intake_dir_source']}")
+    if result["remote_target"] is not None:
+        print(f"remote_target={result['remote_target']}")
+        print(f"remote_host_source={result['remote_host_source']}")
+        print(f"remote_path_source={result['remote_path_source']}")
+        print(f"remote_port_source={result['remote_port_source']}")
+        print(f"transfer={result['transfer_result']}")
+    else:
+        print(f"transfer={result['transfer_result']}")
     if result["schema_path"] is not None:
         print(f"schema_path={result['schema_path']}")
         print(f"schema_path_source={result['schema_path_source']}")
