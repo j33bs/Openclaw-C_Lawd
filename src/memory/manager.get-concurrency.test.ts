@@ -12,6 +12,8 @@ type ManagerModule = typeof import("./manager.js");
 const hoisted = vi.hoisted(() => ({
   providerCreateCalls: 0,
   providerDelayMs: 0,
+  providerId: "mock",
+  requestedProvider: "openai",
 }));
 
 vi.mock("./embeddings.js", () => ({
@@ -21,9 +23,9 @@ vi.mock("./embeddings.js", () => ({
       await new Promise((resolve) => setTimeout(resolve, hoisted.providerDelayMs));
     }
     return {
-      requestedProvider: "openai",
+      requestedProvider: hoisted.requestedProvider,
       provider: {
-        id: "mock",
+        id: hoisted.providerId,
         model: "mock-embed",
         maxInputTokens: 8192,
         embedQuery: async () => [0, 1, 0],
@@ -51,19 +53,24 @@ describe("memory manager cache hydration", () => {
     await fs.writeFile(path.join(workspaceDir, "MEMORY.md"), "Hello memory.");
     hoisted.providerCreateCalls = 0;
     hoisted.providerDelayMs = 50;
+    hoisted.providerId = "mock";
+    hoisted.requestedProvider = "openai";
   });
 
   afterEach(async () => {
     await fs.rm(workspaceDir, { recursive: true, force: true });
   });
 
-  function createMemoryConcurrencyConfig(indexPath: string): OpenClawConfig {
+  function createMemoryConcurrencyConfig(
+    indexPath: string,
+    provider: "openai" | "ollama" = "openai",
+  ): OpenClawConfig {
     return {
       agents: {
         defaults: {
           workspace: workspaceDir,
           memorySearch: {
-            provider: "openai",
+            provider,
             model: "mock-embed",
             store: { path: indexPath, vector: { enabled: false } },
             sync: { watch: false, onSessionStart: false, onSearch: false },
@@ -72,6 +79,14 @@ describe("memory manager cache hydration", () => {
         list: [{ id: "main", default: true }],
       },
     } as OpenClawConfig;
+  }
+
+  async function getRequiredManager(cfg: OpenClawConfig): Promise<MemoryIndexManager> {
+    const result = await getMemorySearchManager({ cfg, agentId: "main" });
+    if (!result.manager) {
+      throw new Error("manager missing");
+    }
+    return result.manager as unknown as MemoryIndexManager;
   }
 
   it("deduplicates concurrent manager creation for the same cache key", async () => {
@@ -113,5 +128,18 @@ describe("memory manager cache hydration", () => {
     expect(hoisted.providerCreateCalls).toBe(2);
 
     await secondManager?.close?.();
+  });
+
+  it("serializes local and ollama indexing work to keep the host responsive", async () => {
+    const indexPath = path.join(workspaceDir, "index-ollama.sqlite");
+    hoisted.providerId = "ollama";
+    hoisted.requestedProvider = "ollama";
+
+    const manager = await getRequiredManager(createMemoryConcurrencyConfig(indexPath, "ollama"));
+    const internal = manager as unknown as { getIndexConcurrency(): number };
+
+    expect(internal.getIndexConcurrency()).toBe(1);
+
+    await manager.close();
   });
 });
