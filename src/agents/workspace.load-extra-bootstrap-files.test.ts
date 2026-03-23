@@ -31,11 +31,24 @@ describe("loadExtraBootstrapFiles", () => {
     await fs.writeFile(path.join(packageDir, "TOOLS.md"), "tools", "utf-8");
     await fs.writeFile(path.join(packageDir, "README.md"), "not bootstrap", "utf-8");
 
-    const files = await loadExtraBootstrapFiles(workspaceDir, ["packages/*/*"]);
+    const files = await loadExtraBootstrapFiles(workspaceDir, ["packages/*/TOOLS.md"]);
 
     expect(files).toHaveLength(1);
     expect(files[0]?.name).toBe("TOOLS.md");
     expect(files[0]?.content).toBe("tools");
+  });
+
+  it("loads non-canonical markdown files from glob patterns", async () => {
+    const workspaceDir = await createWorkspaceDir("glob-readme");
+    const packageDir = path.join(workspaceDir, "packages", "core");
+    await fs.mkdir(packageDir, { recursive: true });
+    await fs.writeFile(path.join(packageDir, "README.md"), "package notes", "utf-8");
+
+    const files = await loadExtraBootstrapFiles(workspaceDir, ["packages/*/README.md"]);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.name).toBe("packages/core/README.md");
+    expect(files[0]?.content).toBe("package notes");
   });
 
   it("keeps path-traversal attempts outside workspace excluded", async () => {

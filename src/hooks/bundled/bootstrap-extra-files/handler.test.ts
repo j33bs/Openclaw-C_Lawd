@@ -73,13 +73,39 @@ describe("bootstrap-extra-files hook", () => {
     );
   });
 
-  it("re-applies subagent bootstrap allowlist after extras are added", async () => {
+  it("appends non-canonical markdown extras using relative names", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-bootstrap-extra-readme-");
+    const extraDir = path.join(tempDir, "packages", "persona");
+    await fs.mkdir(extraDir, { recursive: true });
+    await fs.writeFile(path.join(extraDir, "README.md"), "persona notes", "utf-8");
+
+    const cfg = createBootstrapExtraConfig(["packages/*/README.md"]);
+    const context = await createBootstrapContext({
+      workspaceDir: tempDir,
+      cfg,
+      sessionKey: "agent:main:main",
+      rootFiles: [{ name: "AGENTS.md", content: "root agents" }],
+    });
+
+    const event = createHookEvent("agent", "bootstrap", "agent:main:main", context);
+    await handler(event);
+
+    expect(
+      context.bootstrapFiles.some(
+        (f) =>
+          f.name === "packages/persona/README.md" &&
+          f.path.endsWith(path.join("packages", "persona", "README.md")),
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves extra bootstrap context for subagent sessions", async () => {
     const tempDir = await makeTempWorkspace("openclaw-bootstrap-extra-subagent-");
     const extraDir = path.join(tempDir, "packages", "persona");
     await fs.mkdir(extraDir, { recursive: true });
-    await fs.writeFile(path.join(extraDir, "SOUL.md"), "evil", "utf-8");
+    await fs.writeFile(path.join(extraDir, "README.md"), "persona notes", "utf-8");
 
-    const cfg = createBootstrapExtraConfig(["packages/*/SOUL.md"]);
+    const cfg = createBootstrapExtraConfig(["packages/*/README.md"]);
     const context = await createBootstrapContext({
       workspaceDir: tempDir,
       cfg,
@@ -94,8 +120,8 @@ describe("bootstrap-extra-files hook", () => {
     await handler(event);
     expect(context.bootstrapFiles.map((f) => f.name).toSorted()).toEqual([
       "AGENTS.md",
-      "SOUL.md",
       "TOOLS.md",
+      "packages/persona/README.md",
     ]);
   });
 });

@@ -794,13 +794,13 @@ export const FIELD_HELP: Record<string, string> = {
   "agents.defaults.envelopeElapsed": 'Include elapsed time in message envelopes ("on" or "off").',
   "agents.defaults.models": "Configured model catalog (keys are full provider/model IDs).",
   "agents.defaults.memorySearch":
-    "Vector search over MEMORY.md and memory/*.md (per-agent overrides supported).",
+    "Vector search over MEMORY.md, memory/*.md, and pinned node doctrine under nodes/* (per-agent overrides supported).",
   "agents.defaults.memorySearch.enabled":
     "Master toggle for memory search indexing and retrieval behavior on this agent profile. Keep enabled for semantic recall, and disable when you want fully stateless responses.",
   "agents.defaults.memorySearch.sources":
-    'Chooses which sources are indexed: "memory" reads MEMORY.md + memory files, and "sessions" includes transcript history. Keep ["memory"] unless you need recall from prior chat transcripts.',
+    'Chooses which sources are indexed: "memory" reads MEMORY.md, memory files, and pinned node doctrine under nodes/*; "sessions" includes transcript history. Keep ["memory"] unless you need recall from prior chat transcripts.',
   "agents.defaults.memorySearch.extraPaths":
-    "Adds extra directories or .md files to the memory index beyond default memory files. Use this when key reference docs live elsewhere in your repo; when multimodal memory is enabled, matching image/audio files under these paths are also eligible for indexing.",
+    "Adds extra directories or .md files to the memory index beyond the default memory roots (MEMORY.md, memory/*.md, and pinned node doctrine under nodes/*). Use this when key reference docs live elsewhere in your repo; when multimodal memory is enabled, matching image/audio files under these paths are also eligible for indexing.",
   "agents.defaults.memorySearch.multimodal":
     'Optional multimodal memory settings for indexing image and audio files from configured extra paths. Keep this off unless your embedding model explicitly supports cross-modal embeddings, and set `memorySearch.fallback` to "none" while it is enabled. Matching files are uploaded to the configured remote embedding provider during indexing.',
   "agents.defaults.memorySearch.multimodal.enabled":

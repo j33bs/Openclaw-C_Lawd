@@ -9,6 +9,10 @@ import { resolveSessionAgentId } from "../agent-scope.js";
 import { resolveMemorySearchConfig } from "../memory-search.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
+import {
+  readLocalMemoryFileForAgent,
+  searchLocalMemoryFilesForAgent,
+} from "./memory-file-fallback.js";
 
 const MemorySearchSchema = Type.Object({
   query: Type.String(),
@@ -85,7 +89,7 @@ export function createMemorySearchTool(options: {
     label: "Memory Search",
     name: "memory_search",
     description:
-      "Mandatory recall step: semantically search MEMORY.md + memory/*.md (and optional session transcripts) before answering questions about prior work, decisions, dates, people, preferences, or todos; returns top snippets with path + lines. If response has disabled=true, memory retrieval is unavailable and should be surfaced to the user.",
+      "Mandatory recall step: semantically search the local memory corpus (MEMORY.md, memory/*.md, pinned node docs such as nodes/*/MEMORY.md, nodes/*/CONVERSATION_KERNEL.md, and nodes/*/IDENTITY.md, plus optional session transcripts) before answering questions about prior work, decisions, dates, people, preferences, or todos; returns top snippets with path + lines. If response has disabled=true, memory retrieval is unavailable and should be surfaced to the user.",
     parameters: MemorySearchSchema,
     execute:
       ({ cfg, agentId }) =>
@@ -93,8 +97,30 @@ export function createMemorySearchTool(options: {
         const query = readStringParam(params, "query", { required: true });
         const maxResults = readNumberParam(params, "maxResults");
         const minScore = readNumberParam(params, "minScore");
+        const loadLocalFallback = async () =>
+          await searchLocalMemoryFilesForAgent({
+            cfg,
+            agentId,
+            query,
+            maxResults: maxResults ?? undefined,
+          });
         const memory = await getMemoryManagerContext({ cfg, agentId });
         if ("error" in memory) {
+          const localFallbackResults = await loadLocalFallback().catch(() => []);
+          if (localFallbackResults.length > 0) {
+            const citationsMode = resolveMemoryCitationsMode(cfg);
+            const includeCitations = shouldIncludeCitations({
+              mode: citationsMode,
+              sessionKey: options.agentSessionKey,
+            });
+            return jsonResult({
+              results: decorateCitations(localFallbackResults, includeCitations),
+              provider: "filesystem",
+              citations: citationsMode,
+              mode: "filesystem-fallback",
+              warning: `Semantic memory search unavailable: ${memory.error ?? "memory search unavailable"}`,
+            });
+          }
           return jsonResult(buildMemorySearchUnavailableResult(memory.error));
         }
         try {
@@ -109,7 +135,10 @@ export function createMemorySearchTool(options: {
             sessionKey: options.agentSessionKey,
           });
           const status = memory.manager.status();
-          const decorated = decorateCitations(rawResults, includeCitations);
+          const localFallbackResults =
+            status.dirty === true || rawResults.length === 0 ? await loadLocalFallback() : [];
+          const mergedResults = mergeMemoryResults(rawResults, localFallbackResults, maxResults);
+          const decorated = decorateCitations(mergedResults, includeCitations);
           const resolved = resolveMemoryBackendConfig({ cfg, agentId });
           const results =
             status.backend === "qmd"
@@ -122,10 +151,28 @@ export function createMemorySearchTool(options: {
             model: status.model,
             fallback: status.fallback,
             citations: citationsMode,
-            mode: searchMode,
+            mode: appendSearchMode(
+              searchMode,
+              localFallbackResults.length > 0 ? "filesystem" : null,
+            ),
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
+          const localFallbackResults = await loadLocalFallback().catch(() => []);
+          if (localFallbackResults.length > 0) {
+            const citationsMode = resolveMemoryCitationsMode(cfg);
+            const includeCitations = shouldIncludeCitations({
+              mode: citationsMode,
+              sessionKey: options.agentSessionKey,
+            });
+            return jsonResult({
+              results: decorateCitations(localFallbackResults, includeCitations),
+              provider: "filesystem",
+              citations: citationsMode,
+              mode: "filesystem-fallback",
+              warning: `Semantic memory search unavailable: ${message}`,
+            });
+          }
           return jsonResult(buildMemorySearchUnavailableResult(message));
         }
       },
@@ -141,7 +188,7 @@ export function createMemoryGetTool(options: {
     label: "Memory Get",
     name: "memory_get",
     description:
-      "Safe snippet read from MEMORY.md or memory/*.md with optional from/lines; use after memory_search to pull only the needed lines and keep context small.",
+      "Safe snippet read from the local memory corpus (MEMORY.md, memory/*.md, and pinned node docs) with optional from/lines; use after memory_search to pull only the needed lines and keep context small.",
     parameters: MemoryGetSchema,
     execute:
       ({ cfg, agentId }) =>
@@ -149,9 +196,21 @@ export function createMemoryGetTool(options: {
         const relPath = readStringParam(params, "path", { required: true });
         const from = readNumberParam(params, "from", { integer: true });
         const lines = readNumberParam(params, "lines", { integer: true });
+        const readLocalFallback = async () =>
+          await readLocalMemoryFileForAgent({
+            cfg,
+            agentId,
+            relPath,
+            from: from ?? undefined,
+            lines: lines ?? undefined,
+          });
         const memory = await getMemoryManagerContext({ cfg, agentId });
         if ("error" in memory) {
-          return jsonResult({ path: relPath, text: "", disabled: true, error: memory.error });
+          try {
+            return jsonResult(await readLocalFallback());
+          } catch {
+            return jsonResult({ path: relPath, text: "", disabled: true, error: memory.error });
+          }
         }
         try {
           const result = await memory.manager.readFile({
@@ -162,7 +221,11 @@ export function createMemoryGetTool(options: {
           return jsonResult(result);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          return jsonResult({ path: relPath, text: "", disabled: true, error: message });
+          try {
+            return jsonResult(await readLocalFallback());
+          } catch {
+            return jsonResult({ path: relPath, text: "", disabled: true, error: message });
+          }
         }
       },
   });
@@ -219,6 +282,36 @@ function clampResultsByInjectedChars(
     }
   }
   return clamped;
+}
+
+function mergeMemoryResults(
+  primary: MemorySearchResult[],
+  fallback: MemorySearchResult[],
+  maxResults?: number,
+): MemorySearchResult[] {
+  const merged = new Map<string, MemorySearchResult>();
+  for (const entry of [...fallback, ...primary]) {
+    const key = `${entry.path}:${entry.startLine}:${entry.endLine}`;
+    const existing = merged.get(key);
+    if (!existing || entry.score > existing.score) {
+      merged.set(key, entry);
+    }
+  }
+  const combined = Array.from(merged.values()).toSorted((a, b) => b.score - a.score);
+  if (maxResults && Number.isFinite(maxResults) && maxResults > 0) {
+    return combined.slice(0, Math.floor(maxResults));
+  }
+  return combined;
+}
+
+function appendSearchMode(base: string | undefined, suffix: string | null): string | undefined {
+  if (!suffix) {
+    return base;
+  }
+  if (!base) {
+    return suffix;
+  }
+  return base.includes(suffix) ? base : `${base}+${suffix}`;
 }
 
 function buildMemorySearchUnavailableResult(error: string | undefined) {

@@ -45,6 +45,11 @@ const DISABLED_MULTIMODAL_SETTINGS: MemoryMultimodalSettings = {
   modalities: [],
   maxFileBytes: 0,
 };
+const DEFAULT_PINNED_NODE_MEMORY_FILENAMES = [
+  "CONVERSATION_KERNEL.md",
+  "IDENTITY.md",
+  "MEMORY.md",
+] as const;
 
 export function ensureDir(dir: string): string {
   try {
@@ -79,6 +84,9 @@ export function isMemoryPath(relPath: string): boolean {
   if (normalized === "MEMORY.md" || normalized === "memory.md") {
     return true;
   }
+  if (/^nodes\/[^/]+\/(?:CONVERSATION_KERNEL|IDENTITY|MEMORY)\.md$/.test(normalized)) {
+    return true;
+  }
   return normalized.startsWith("memory/");
 }
 
@@ -89,6 +97,16 @@ function isAllowedMemoryFilePath(filePath: string, multimodal?: MemoryMultimodal
   return (
     classifyMemoryMultimodalPath(filePath, multimodal ?? DISABLED_MULTIMODAL_SETTINGS) !== null
   );
+}
+
+async function addMarkdownFileIfAllowed(absPath: string, files: string[]) {
+  try {
+    const stat = await fs.lstat(absPath);
+    if (stat.isSymbolicLink() || !stat.isFile() || !absPath.endsWith(".md")) {
+      return;
+    }
+    files.push(absPath);
+  } catch {}
 }
 
 async function walkDir(dir: string, files: string[], multimodal?: MemoryMultimodalSettings) {
@@ -121,26 +139,29 @@ export async function listMemoryFiles(
   const memoryFile = path.join(workspaceDir, "MEMORY.md");
   const altMemoryFile = path.join(workspaceDir, "memory.md");
   const memoryDir = path.join(workspaceDir, "memory");
+  const nodesDir = path.join(workspaceDir, "nodes");
 
-  const addMarkdownFile = async (absPath: string) => {
-    try {
-      const stat = await fs.lstat(absPath);
-      if (stat.isSymbolicLink() || !stat.isFile()) {
-        return;
-      }
-      if (!absPath.endsWith(".md")) {
-        return;
-      }
-      result.push(absPath);
-    } catch {}
-  };
-
-  await addMarkdownFile(memoryFile);
-  await addMarkdownFile(altMemoryFile);
+  await addMarkdownFileIfAllowed(memoryFile, result);
+  await addMarkdownFileIfAllowed(altMemoryFile, result);
   try {
     const dirStat = await fs.lstat(memoryDir);
     if (!dirStat.isSymbolicLink() && dirStat.isDirectory()) {
       await walkDir(memoryDir, result);
+    }
+  } catch {}
+  try {
+    const dirStat = await fs.lstat(nodesDir);
+    if (!dirStat.isSymbolicLink() && dirStat.isDirectory()) {
+      const nodeEntries = await fs.readdir(nodesDir, { withFileTypes: true });
+      const sortedNodeEntries = [...nodeEntries].toSorted((a, b) => a.name.localeCompare(b.name));
+      for (const entry of sortedNodeEntries) {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) {
+          continue;
+        }
+        for (const fileName of DEFAULT_PINNED_NODE_MEMORY_FILENAMES) {
+          await addMarkdownFileIfAllowed(path.join(nodesDir, entry.name, fileName), result);
+        }
+      }
     }
   } catch {}
 

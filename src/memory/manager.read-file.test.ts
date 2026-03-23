@@ -75,6 +75,21 @@ describe("MemoryIndexManager.readFile", () => {
     expect(result).toEqual({ text: "line 2", path: relPath });
   });
 
+  it("returns content slices for pinned node memory files", async () => {
+    const relPath = "nodes/c_lawd/IDENTITY.md";
+    const absPath = path.join(workspaceDir, relPath);
+    await fs.mkdir(path.dirname(absPath), { recursive: true });
+    await fs.writeFile(absPath, ["name: c_lawd", "vibe: grounded"].join("\n"), "utf-8");
+
+    manager = await getRequiredMemoryIndexManager({
+      cfg: createMemorySearchCfg({ workspaceDir, indexPath }),
+      agentId: "main",
+    });
+
+    const result = await manager.readFile({ relPath, from: 2, lines: 1 });
+    expect(result).toEqual({ text: "vibe: grounded", path: relPath });
+  });
+
   it("returns empty text when the requested slice is past EOF", async () => {
     const relPath = "memory/window.md";
     const absPath = path.join(workspaceDir, relPath);

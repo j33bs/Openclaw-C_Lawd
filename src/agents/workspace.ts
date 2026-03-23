@@ -38,6 +38,11 @@ const WORKSPACE_STATE_VERSION = 1;
 const workspaceTemplateCache = new Map<string, Promise<string>>();
 let gitAvailabilityPromise: Promise<boolean> | null = null;
 const MAX_WORKSPACE_BOOTSTRAP_FILE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_PINNED_NODE_FILENAMES = [
+  "CONVERSATION_KERNEL.md",
+  "IDENTITY.md",
+  "MEMORY.md",
+] as const;
 
 // File content cache keyed by stable file identity to avoid stale reads.
 const workspaceFileCache = new Map<string, { content: string; identity: string }>();
@@ -141,7 +146,7 @@ export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_MEMORY_ALT_FILENAME;
 
 export type WorkspaceBootstrapFile = {
-  name: WorkspaceBootstrapFileName;
+  name: string;
   path: string;
   content?: string;
   missing: boolean;
@@ -176,6 +181,14 @@ const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
   DEFAULT_BOOTSTRAP_FILENAME,
   DEFAULT_MEMORY_FILENAME,
   DEFAULT_MEMORY_ALT_FILENAME,
+]);
+const VALID_EXTRA_BOOTSTRAP_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".md",
+  ".txt",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
 ]);
 
 async function writeFileIfMissing(filePath: string, content: string): Promise<boolean> {
@@ -484,6 +497,57 @@ async function resolveMemoryBootstrapEntry(
   return null;
 }
 
+async function resolveRecentDailyMemoryBootstrapEntries(
+  resolvedDir: string,
+): Promise<Array<{ name: string; filePath: string }>> {
+  const memoryDir = path.join(resolvedDir, "memory");
+  let entries: string[] = [];
+  try {
+    entries = await fs.readdir(memoryDir);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => /^\d{4}-\d{2}-\d{2}\.md$/.test(entry))
+    .toSorted((a, b) => b.localeCompare(a))
+    .slice(0, 2)
+    .map((entry) => ({
+      name: path.posix.join("memory", entry),
+      filePath: path.join(memoryDir, entry),
+    }));
+}
+
+async function resolveNodeBootstrapEntries(
+  resolvedDir: string,
+): Promise<Array<{ name: string; filePath: string }>> {
+  const nodesDir = path.join(resolvedDir, "nodes");
+  let entries: syncFs.Dirent[] = [];
+  try {
+    entries = await fs.readdir(nodesDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const resolved: Array<{ name: string; filePath: string }> = [];
+  const sortedEntries = [...entries].toSorted((a, b) => a.name.localeCompare(b.name));
+  for (const entry of sortedEntries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
+      continue;
+    }
+    for (const fileName of DEFAULT_PINNED_NODE_FILENAMES) {
+      const relPath = path.posix.join("nodes", entry.name, fileName);
+      const filePath = path.join(nodesDir, entry.name, fileName);
+      try {
+        await fs.access(filePath);
+        resolved.push({ name: relPath, filePath });
+      } catch {
+        // optional pinned node state
+      }
+    }
+  }
+  return resolved;
+}
+
 export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
   const resolvedDir = resolveUserPath(dir);
 
@@ -526,8 +590,11 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     entries.push(memoryEntry);
   }
 
+  const recentDailyEntries = await resolveRecentDailyMemoryBootstrapEntries(resolvedDir);
+  const nodeEntries = await resolveNodeBootstrapEntries(resolvedDir);
+
   const result: WorkspaceBootstrapFile[] = [];
-  for (const entry of entries) {
+  for (const entry of [...entries, ...recentDailyEntries, ...nodeEntries]) {
     const loaded = await readWorkspaceFileWithGuards({
       filePath: entry.filePath,
       workspaceDir: resolvedDir,
@@ -559,6 +626,9 @@ export function filterBootstrapFilesForSession(
   sessionKey?: string,
 ): WorkspaceBootstrapFile[] {
   if (!sessionKey || (!isSubagentSessionKey(sessionKey) && !isCronSessionKey(sessionKey))) {
+    return files;
+  }
+  if (isSubagentSessionKey(sessionKey)) {
     return files;
   }
   return files.filter((file) => MINIMAL_BOOTSTRAP_ALLOWLIST.has(file.name));
@@ -606,13 +676,15 @@ export async function loadExtraBootstrapFilesWithDiagnostics(
   const diagnostics: ExtraBootstrapLoadDiagnostic[] = [];
   for (const relPath of resolvedPaths) {
     const filePath = path.resolve(resolvedDir, relPath);
-    // Only load files whose basename is a recognized bootstrap filename
     const baseName = path.basename(relPath);
-    if (!VALID_BOOTSTRAP_NAMES.has(baseName)) {
+    const extension = path.extname(baseName).toLowerCase();
+    const supportedByName = VALID_BOOTSTRAP_NAMES.has(baseName);
+    const supportedByExtension = VALID_EXTRA_BOOTSTRAP_EXTENSIONS.has(extension);
+    if (!supportedByName && !supportedByExtension) {
       diagnostics.push({
         path: filePath,
         reason: "invalid-bootstrap-filename",
-        detail: `unsupported bootstrap basename: ${baseName}`,
+        detail: `unsupported bootstrap file type: ${baseName}`,
       });
       continue;
     }
@@ -621,8 +693,9 @@ export async function loadExtraBootstrapFilesWithDiagnostics(
       workspaceDir: resolvedDir,
     });
     if (loaded.ok) {
+      const normalizedRelPath = path.relative(resolvedDir, filePath).replace(/\\/g, "/");
       files.push({
-        name: baseName as WorkspaceBootstrapFileName,
+        name: supportedByName ? baseName : normalizedRelPath,
         path: filePath,
         content: loaded.content,
         missing: false,

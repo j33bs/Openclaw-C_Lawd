@@ -59,7 +59,7 @@ async function expectCompletedWithoutBootstrap(dir: string) {
   expect(state.setupCompletedAt).toMatch(/\d{4}-\d{2}-\d{2}T/);
 }
 
-function expectSubagentAllowedBootstrapNames(files: WorkspaceBootstrapFile[]) {
+function expectCronMinimalBootstrapNames(files: WorkspaceBootstrapFile[]) {
   const names = files.map((file) => file.name);
   expect(names).toContain("AGENTS.md");
   expect(names).toContain("TOOLS.md");
@@ -213,6 +213,35 @@ describe("loadWorkspaceBootstrapFiles", () => {
     expect(getMemoryEntries(files)).toHaveLength(0);
   });
 
+  it("includes recent daily notes and pinned node doctrine when present", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await fs.mkdir(path.join(tempDir, "memory"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, "nodes", "c_lawd"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, "nodes", "james"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, "memory", "2026-03-22.md"), "older", "utf-8");
+    await fs.writeFile(path.join(tempDir, "memory", "2026-03-23.md"), "yesterday", "utf-8");
+    await fs.writeFile(path.join(tempDir, "memory", "2026-03-24.md"), "today", "utf-8");
+    await fs.writeFile(
+      path.join(tempDir, "nodes", "c_lawd", "CONVERSATION_KERNEL.md"),
+      "kernel",
+      "utf-8",
+    );
+    await fs.writeFile(path.join(tempDir, "nodes", "c_lawd", "IDENTITY.md"), "identity", "utf-8");
+    await fs.writeFile(path.join(tempDir, "nodes", "c_lawd", "MEMORY.md"), "node memory", "utf-8");
+    await fs.writeFile(path.join(tempDir, "nodes", "james", "MEMORY.md"), "james memory", "utf-8");
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const names = new Set(files.filter((file) => !file.missing).map((file) => file.name));
+
+    expect(names.has("memory/2026-03-24.md")).toBe(true);
+    expect(names.has("memory/2026-03-23.md")).toBe(true);
+    expect(names.has("memory/2026-03-22.md")).toBe(false);
+    expect(names.has("nodes/c_lawd/CONVERSATION_KERNEL.md")).toBe(true);
+    expect(names.has("nodes/c_lawd/IDENTITY.md")).toBe(true);
+    expect(names.has("nodes/c_lawd/MEMORY.md")).toBe(true);
+    expect(names.has("nodes/james/MEMORY.md")).toBe(true);
+  });
+
   it("treats hardlinked bootstrap aliases as missing", async () => {
     if (process.platform === "win32") {
       return;
@@ -255,6 +284,13 @@ describe("filterBootstrapFilesForSession", () => {
     { name: "HEARTBEAT.md", path: "/w/HEARTBEAT.md", content: "", missing: false },
     { name: "BOOTSTRAP.md", path: "/w/BOOTSTRAP.md", content: "", missing: false },
     { name: "MEMORY.md", path: "/w/MEMORY.md", content: "", missing: false },
+    { name: "memory/2026-03-24.md", path: "/w/memory/2026-03-24.md", content: "", missing: false },
+    {
+      name: "nodes/c_lawd/MEMORY.md",
+      path: "/w/nodes/c_lawd/MEMORY.md",
+      content: "",
+      missing: false,
+    },
   ];
 
   it("returns all files for main session (no sessionKey)", () => {
@@ -268,12 +304,12 @@ describe("filterBootstrapFilesForSession", () => {
   });
 
   it("filters to allowlist for subagent sessions", () => {
-    const result = filterBootstrapFilesForSession(mockFiles, "agent:default:subagent:task-1");
-    expectSubagentAllowedBootstrapNames(result);
+    const result = filterBootstrapFilesForSession(mockFiles, "agent:main:subagent:task-1");
+    expect(result).toHaveLength(mockFiles.length);
   });
 
   it("filters to allowlist for cron sessions", () => {
     const result = filterBootstrapFilesForSession(mockFiles, "agent:default:cron:daily-check");
-    expectSubagentAllowedBootstrapNames(result);
+    expectCronMinimalBootstrapNames(result);
   });
 });
