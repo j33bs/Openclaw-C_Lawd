@@ -102,17 +102,18 @@ Defaults:
 - Watches memory files for changes (debounced).
 - Configure memory search under `agents.defaults.memorySearch` (not top-level
   `memorySearch`).
-- Uses remote embeddings by default. If `memorySearch.provider` is not set, OpenClaw auto-selects:
+- If `memorySearch.provider` is not set, OpenClaw auto-selects:
   1. `local` if a `memorySearch.local.modelPath` is configured and the file exists.
-  2. `openai` if an OpenAI key can be resolved.
-  3. `gemini` if a Gemini key can be resolved.
-  4. `voyage` if a Voyage key can be resolved.
-  5. `mistral` if a Mistral key can be resolved.
-  6. Otherwise memory search stays disabled until configured.
+  2. `ollama` if `models.providers.ollama` is configured.
+  3. `openai` if an OpenAI key can be resolved.
+  4. `gemini` if a Gemini key can be resolved.
+  5. `voyage` if a Voyage key can be resolved.
+  6. `mistral` if a Mistral key can be resolved.
+  7. Otherwise memory search stays disabled until configured.
 - Local mode uses node-llama-cpp and may require `pnpm approve-builds`.
 - Uses sqlite-vec (when available) to accelerate vector search inside SQLite.
 - `memorySearch.provider = "ollama"` is also supported for local/self-hosted
-  Ollama embeddings (`/api/embeddings`), but it is not auto-selected.
+  Ollama embeddings (`/api/embeddings`).
 
 Remote embeddings **require** an API key for the embedding provider. OpenClaw
 resolves keys from auth profiles, `models.providers.*.apiKey`, or environment

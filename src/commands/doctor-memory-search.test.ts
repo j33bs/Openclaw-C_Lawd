@@ -115,6 +115,36 @@ describe("noteMemorySearchHealth", () => {
     expect(note).not.toHaveBeenCalled();
   });
 
+  it("does not warn when ollama provider is set without an API key", async () => {
+    resolveMemorySearchConfig.mockReturnValue({
+      provider: "ollama",
+      local: {},
+      remote: {},
+    });
+
+    await noteMemorySearchHealth(cfg, {});
+
+    expect(note).not.toHaveBeenCalled();
+    expect(resolveApiKeyForProvider).not.toHaveBeenCalled();
+  });
+
+  it("warns when ollama provider is set but gateway probe reports not ready", async () => {
+    resolveMemorySearchConfig.mockReturnValue({
+      provider: "ollama",
+      local: {},
+      remote: {},
+    });
+
+    await noteMemorySearchHealth(cfg, {
+      gatewayMemoryProbe: { checked: true, ready: false, error: "connection refused" },
+    });
+
+    expect(note).toHaveBeenCalledTimes(1);
+    const message = String(note.mock.calls[0]?.[0] ?? "");
+    expect(message).toContain('provider is set to "ollama"');
+    expect(message).toContain("gateway reports Ollama embeddings are not ready");
+  });
+
   it("does not warn when QMD backend is active", async () => {
     resolveMemoryBackendConfig.mockReturnValue({
       backend: "qmd",
@@ -266,29 +296,28 @@ describe("noteMemorySearchHealth", () => {
     expect(message).toContain("openclaw configure --section model");
   });
 
-  it("still warns in auto mode when only ollama credentials exist", async () => {
+  it("does not warn in auto mode when an ollama provider is configured", async () => {
     resolveMemorySearchConfig.mockReturnValue({
       provider: "auto",
       local: {},
       remote: {},
     });
-    resolveApiKeyForProvider.mockImplementation(async ({ provider }: { provider: string }) => {
-      if (provider === "ollama") {
-        return {
-          apiKey: "ollama-local", // pragma: allowlist secret
-          source: "env: OLLAMA_API_KEY",
-          mode: "api-key",
-        };
-      }
-      throw new Error("missing key");
-    });
 
-    await noteMemorySearchHealth(cfg);
+    await noteMemorySearchHealth(
+      {
+        models: {
+          providers: {
+            ollama: {
+              baseUrl: "http://127.0.0.1:11434/v1",
+            },
+          },
+        },
+      } as OpenClawConfig,
+      {},
+    );
 
-    expect(note).toHaveBeenCalledTimes(1);
-    const providerCalls = resolveApiKeyForProvider.mock.calls as Array<[{ provider: string }]>;
-    const providersChecked = providerCalls.map(([arg]) => arg.provider);
-    expect(providersChecked).toEqual(["openai", "google", "voyage", "mistral"]);
+    expect(note).not.toHaveBeenCalled();
+    expect(resolveApiKeyForProvider).not.toHaveBeenCalled();
   });
 });
 

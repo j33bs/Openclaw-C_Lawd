@@ -71,12 +71,30 @@ export async function noteMemorySearchHealth(
           "",
           "Fix (pick one):",
           `- Install node-llama-cpp and set a local model path in config`,
-          `- Switch to a remote provider: ${formatCliCommand("openclaw config set agents.defaults.memorySearch.provider openai")}`,
+          `- Switch to Ollama: ${formatCliCommand("openclaw config set agents.defaults.memorySearch.provider ollama")}`,
           "",
           `Verify: ${formatCliCommand("openclaw memory status --deep")}`,
         ].join("\n"),
         "Memory search",
       );
+      return;
+    }
+    if (resolved.provider === "ollama") {
+      if (opts?.gatewayMemoryProbe?.checked && !opts.gatewayMemoryProbe.ready) {
+        const detail = opts.gatewayMemoryProbe.error?.trim();
+        note(
+          [
+            'Memory search provider is set to "ollama",',
+            "but the gateway reports Ollama embeddings are not ready.",
+            detail ? `Gateway probe: ${detail}` : null,
+            "",
+            `Verify: ${formatCliCommand("openclaw memory status --deep")}`,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          "Memory search",
+        );
+      }
       return;
     }
     // Remote provider — check for API key
@@ -118,6 +136,9 @@ export async function noteMemorySearchHealth(
   if (hasLocalEmbeddings(resolved.local)) {
     return;
   }
+  if (hasConfiguredOllamaProvider(cfg)) {
+    return;
+  }
   for (const provider of ["openai", "gemini", "voyage", "mistral"] as const) {
     if (hasRemoteApiKey || (await hasApiKeyForProvider(provider, cfg, agentDir))) {
       return;
@@ -144,6 +165,7 @@ export async function noteMemorySearchHealth(
       gatewayProbeWarning ? gatewayProbeWarning : null,
       "",
       "Fix (pick one):",
+      `- Use Ollama locally: ${formatCliCommand('openclaw config set agents.defaults.memorySearch \'{"provider":"ollama","model":"nomic-embed-text","fallback":"none"}\' --strict-json')}`,
       "- Set OPENAI_API_KEY, GEMINI_API_KEY, VOYAGE_API_KEY, or MISTRAL_API_KEY in your environment",
       `- Configure credentials: ${formatCliCommand("openclaw configure --section model")}`,
       `- For local embeddings: configure agents.defaults.memorySearch.provider and local model path`,
@@ -184,6 +206,10 @@ function hasLocalEmbeddings(local: { modelPath?: string }, useDefaultFallback = 
   } catch {
     return false;
   }
+}
+
+function hasConfiguredOllamaProvider(cfg: OpenClawConfig): boolean {
+  return Boolean(cfg.models?.providers?.ollama);
 }
 
 async function hasApiKeyForProvider(
