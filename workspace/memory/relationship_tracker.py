@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
+    from .io_utils import write_json_atomic_verified
     from .paths import resolve_repo_relative, resolve_state_runtime_memory_path
 else:  # pragma: no cover - script/local import compatibility
+    from io_utils import write_json_atomic_verified
     from paths import resolve_repo_relative, resolve_state_runtime_memory_path
 
 DEFAULT_STATE_PATH = resolve_state_runtime_memory_path("relationship_state.json")
@@ -39,8 +41,7 @@ def load_state(*, repo_root: Path | str, state_path: Path | None = None) -> dict
 def save_state(state: dict[str, Any], *, repo_root: Path | str, state_path: Path | None = None) -> Path:
     path = _resolve_path(repo_root, state_path=state_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
-    return path
+    return write_json_atomic_verified(path, state, indent=2, ensure_ascii=True)
 
 
 def _tone_adjustment(tone: str) -> float:

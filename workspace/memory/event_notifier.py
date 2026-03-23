@@ -8,8 +8,10 @@ from datetime import datetime
 from pathlib import Path
 
 if __package__:
+    from .io_utils import write_json_atomic_verified
     from .paths import resolve_workspace_memory_path
 else:  # pragma: no cover - script/local import compatibility
+    from io_utils import write_json_atomic_verified
     from paths import resolve_workspace_memory_path
 
 class EventNotifier:
@@ -20,13 +22,12 @@ class EventNotifier:
     
     def _load(self):
         if self.path.exists():
-            with open(self.path) as f:
+            with open(self.path, encoding="utf-8") as f:
                 return json.load(f)
         return {"events": [], "notifications": []}
     
     def _save(self):
-        with open(self.path, 'w') as f:
-            json.dump(self.events, f, indent=2)
+        write_json_atomic_verified(self.path, self.events, indent=2, ensure_ascii=True)
     
     def notify(self, title, message, urgency="normal"):
         """Queue a notification."""
