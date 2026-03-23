@@ -23,7 +23,7 @@ const TELEGRAM_RETRY_RE = /429|timeout|connect|reset|closed|unavailable|temporar
 const log = createSubsystemLogger("retry-policy");
 
 function resolveTelegramShouldRetry(params: {
-  shouldRetry?: (err: unknown) => boolean;
+  shouldRetry?: (err: unknown, attempt: number) => boolean;
   strictShouldRetry?: boolean;
 }) {
   if (!params.shouldRetry) {
@@ -32,8 +32,8 @@ function resolveTelegramShouldRetry(params: {
   if (params.strictShouldRetry) {
     return params.shouldRetry;
   }
-  return (err: unknown) =>
-    params.shouldRetry?.(err) || TELEGRAM_RETRY_RE.test(formatErrorMessage(err));
+  return (err: unknown, attempt: number) =>
+    params.shouldRetry?.(err, attempt) || TELEGRAM_RETRY_RE.test(formatErrorMessage(err));
 }
 
 function getTelegramRetryAfterMs(err: unknown): number | undefined {
@@ -89,7 +89,7 @@ export function createTelegramRetryRunner(params: {
   retry?: RetryConfig;
   configRetry?: RetryConfig;
   verbose?: boolean;
-  shouldRetry?: (err: unknown) => boolean;
+  shouldRetry?: (err: unknown, attempt: number) => boolean;
   /**
    * When true, the custom shouldRetry predicate is used exclusively —
    * the default TELEGRAM_RETRY_RE fallback regex is NOT OR'd in.

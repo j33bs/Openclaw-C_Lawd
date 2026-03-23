@@ -944,6 +944,36 @@ describe("sendMessageTelegram", () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("retries a single grammY fetch-failed envelope for non-idempotent sends", async () => {
+    vi.useFakeTimers();
+    const chatId = "123";
+    const httpError = Object.assign(new Error("Network request for 'sendMessage' failed!"), {
+      name: "HttpError",
+      error: new TypeError("fetch failed"),
+    });
+    const sendMessage = vi
+      .fn()
+      .mockRejectedValueOnce(httpError)
+      .mockResolvedValueOnce({
+        message_id: 2,
+        chat: { id: chatId },
+      });
+    const api = { sendMessage } as unknown as {
+      sendMessage: typeof sendMessage;
+    };
+
+    const promise = sendMessageTelegram(chatId, "hi", {
+      token: "tok",
+      api,
+      retry: { attempts: 3, minDelayMs: 0, maxDelayMs: 0, jitter: 0 },
+    });
+
+    await vi.runAllTimersAsync();
+    await expect(promise).resolves.toEqual({ messageId: "2", chatId });
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it("sends GIF media as animation", async () => {
     const chatId = "123";
     const sendAnimation = vi.fn().mockResolvedValue({
