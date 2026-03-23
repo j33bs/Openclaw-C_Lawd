@@ -8,6 +8,7 @@ import { resolveAgentDir } from "../agents/agent-scope.js";
 import { ResolvedMemorySearchConfig } from "../agents/memory-search.js";
 import { type OpenClawConfig } from "../config/config.js";
 import { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
+import { withFileLock } from "../infra/file-lock.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { resolveUserPath } from "../utils.js";
@@ -76,6 +77,16 @@ const EMBEDDING_CACHE_TABLE = "embedding_cache";
 const SESSION_DIRTY_DEBOUNCE_MS = 5000;
 const SESSION_DELTA_READ_CHUNK_BYTES = 64 * 1024;
 const VECTOR_LOAD_TIMEOUT_MS = 30_000;
+const MEMORY_REINDEX_LOCK_OPTIONS = {
+  retries: {
+    retries: 120,
+    factor: 1.15,
+    minTimeout: 250,
+    maxTimeout: 2_000,
+    randomize: true,
+  },
+  stale: 30 * 60_000,
+} as const;
 const IGNORED_MEMORY_WATCH_DIR_NAMES = new Set([
   ".git",
   "node_modules",
@@ -1148,108 +1159,110 @@ export abstract class MemoryManagerSyncOps {
     progress?: MemorySyncProgressState;
   }): Promise<void> {
     const dbPath = resolveUserPath(this.settings.store.path);
-    const tempDbPath = `${dbPath}.tmp-${randomUUID()}`;
-    const tempDb = this.openDatabaseAtPath(tempDbPath);
+    await withFileLock(dbPath, MEMORY_REINDEX_LOCK_OPTIONS, async () => {
+      const tempDbPath = `${dbPath}.tmp-${randomUUID()}`;
+      const tempDb = this.openDatabaseAtPath(tempDbPath);
 
-    const originalDb = this.db;
-    let originalDbClosed = false;
-    const originalState = {
-      ftsAvailable: this.fts.available,
-      ftsError: this.fts.loadError,
-      vectorAvailable: this.vector.available,
-      vectorLoadError: this.vector.loadError,
-      vectorDims: this.vector.dims,
-      vectorReady: this.vectorReady,
-    };
-
-    const restoreOriginalState = () => {
-      if (originalDbClosed) {
-        this.db = this.openDatabaseAtPath(dbPath);
-      } else {
-        this.db = originalDb;
-      }
-      this.fts.available = originalState.ftsAvailable;
-      this.fts.loadError = originalState.ftsError;
-      this.vector.available = originalDbClosed ? null : originalState.vectorAvailable;
-      this.vector.loadError = originalState.vectorLoadError;
-      this.vector.dims = originalState.vectorDims;
-      this.vectorReady = originalDbClosed ? null : originalState.vectorReady;
-    };
-
-    this.db = tempDb;
-    this.vectorReady = null;
-    this.vector.available = null;
-    this.vector.loadError = undefined;
-    this.vector.dims = undefined;
-    this.fts.available = false;
-    this.fts.loadError = undefined;
-    this.ensureSchema();
-
-    let nextMeta: MemoryIndexMeta | null = null;
-
-    try {
-      this.seedEmbeddingCache(originalDb);
-      const shouldSyncMemory = this.sources.has("memory");
-      const shouldSyncSessions = this.shouldSyncSessions(
-        { reason: params.reason, force: params.force },
-        true,
-      );
-
-      if (shouldSyncMemory) {
-        await this.syncMemoryFiles({ needsFullReindex: true, progress: params.progress });
-        this.dirty = false;
-      }
-
-      if (shouldSyncSessions) {
-        await this.syncSessionFiles({ needsFullReindex: true, progress: params.progress });
-        this.sessionsDirty = false;
-        this.sessionsDirtyFiles.clear();
-      } else if (this.sessionsDirtyFiles.size > 0) {
-        this.sessionsDirty = true;
-      } else {
-        this.sessionsDirty = false;
-      }
-
-      nextMeta = {
-        model: this.provider?.model ?? "fts-only",
-        provider: this.provider?.id ?? "none",
-        providerKey: this.providerKey!,
-        sources: this.resolveConfiguredSourcesForMeta(),
-        scopeHash: this.resolveConfiguredScopeHash(),
-        chunkTokens: this.settings.chunking.tokens,
-        chunkOverlap: this.settings.chunking.overlap,
+      const originalDb = this.db;
+      let originalDbClosed = false;
+      const originalState = {
+        ftsAvailable: this.fts.available,
+        ftsError: this.fts.loadError,
+        vectorAvailable: this.vector.available,
+        vectorLoadError: this.vector.loadError,
+        vectorDims: this.vector.dims,
+        vectorReady: this.vectorReady,
       };
-      if (!nextMeta) {
-        throw new Error("Failed to compute memory index metadata for reindexing.");
-      }
 
-      if (this.vector.available && this.vector.dims) {
-        nextMeta.vectorDims = this.vector.dims;
-      }
+      const restoreOriginalState = () => {
+        if (originalDbClosed) {
+          this.db = this.openDatabaseAtPath(dbPath);
+        } else {
+          this.db = originalDb;
+        }
+        this.fts.available = originalState.ftsAvailable;
+        this.fts.loadError = originalState.ftsError;
+        this.vector.available = originalDbClosed ? null : originalState.vectorAvailable;
+        this.vector.loadError = originalState.vectorLoadError;
+        this.vector.dims = originalState.vectorDims;
+        this.vectorReady = originalDbClosed ? null : originalState.vectorReady;
+      };
 
-      this.writeMeta(nextMeta);
-      this.pruneEmbeddingCacheIfNeeded?.();
-
-      this.db.close();
-      originalDb.close();
-      originalDbClosed = true;
-
-      await this.swapIndexFiles(dbPath, tempDbPath);
-
-      this.db = this.openDatabaseAtPath(dbPath);
+      this.db = tempDb;
       this.vectorReady = null;
       this.vector.available = null;
       this.vector.loadError = undefined;
+      this.vector.dims = undefined;
+      this.fts.available = false;
+      this.fts.loadError = undefined;
       this.ensureSchema();
-      this.vector.dims = nextMeta?.vectorDims;
-    } catch (err) {
+
+      let nextMeta: MemoryIndexMeta | null = null;
+
       try {
+        this.seedEmbeddingCache(originalDb);
+        const shouldSyncMemory = this.sources.has("memory");
+        const shouldSyncSessions = this.shouldSyncSessions(
+          { reason: params.reason, force: params.force },
+          true,
+        );
+
+        if (shouldSyncMemory) {
+          await this.syncMemoryFiles({ needsFullReindex: true, progress: params.progress });
+          this.dirty = false;
+        }
+
+        if (shouldSyncSessions) {
+          await this.syncSessionFiles({ needsFullReindex: true, progress: params.progress });
+          this.sessionsDirty = false;
+          this.sessionsDirtyFiles.clear();
+        } else if (this.sessionsDirtyFiles.size > 0) {
+          this.sessionsDirty = true;
+        } else {
+          this.sessionsDirty = false;
+        }
+
+        nextMeta = {
+          model: this.provider?.model ?? "fts-only",
+          provider: this.provider?.id ?? "none",
+          providerKey: this.providerKey!,
+          sources: this.resolveConfiguredSourcesForMeta(),
+          scopeHash: this.resolveConfiguredScopeHash(),
+          chunkTokens: this.settings.chunking.tokens,
+          chunkOverlap: this.settings.chunking.overlap,
+        };
+        if (!nextMeta) {
+          throw new Error("Failed to compute memory index metadata for reindexing.");
+        }
+
+        if (this.vector.available && this.vector.dims) {
+          nextMeta.vectorDims = this.vector.dims;
+        }
+
+        this.writeMeta(nextMeta);
+        this.pruneEmbeddingCacheIfNeeded?.();
+
         this.db.close();
-      } catch {}
-      await this.removeIndexFiles(tempDbPath);
-      restoreOriginalState();
-      throw err;
-    }
+        originalDb.close();
+        originalDbClosed = true;
+
+        await this.swapIndexFiles(dbPath, tempDbPath);
+
+        this.db = this.openDatabaseAtPath(dbPath);
+        this.vectorReady = null;
+        this.vector.available = null;
+        this.vector.loadError = undefined;
+        this.ensureSchema();
+        this.vector.dims = nextMeta?.vectorDims;
+      } catch (err) {
+        try {
+          this.db.close();
+        } catch {}
+        await this.removeIndexFiles(tempDbPath);
+        restoreOriginalState();
+        throw err;
+      }
+    });
   }
 
   private async runUnsafeReindex(params: {
