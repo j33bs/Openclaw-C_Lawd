@@ -19,6 +19,14 @@ _A record of how the system changes over time: what changed, why, and what was l
 
 ## Log
 
+### 2026-03-24 — [kb-runtime] Added a local KB compatibility refresh path and runtime gate
+
+**Proposal:** spontaneous
+**Changed:** Added `workspace/knowledge_base/refresh_seed.py` to rebuild `workspace/knowledge_base/data/entities.jsonl` plus `last_sync.txt` from durable local docs, and gated `workspace/memory/unified_query.js` so the compatibility `vector_store` adapter stays silent until that corpus has a real sync receipt and more than the single baked-in seed row. Added focused Python and Vitest coverage and documented the new refresh command.
+**Why it mattered:** The repo-local KB had become honest in diagnostics, but still weak in operation: there was no production writer for the compatibility corpus, and the read path still treated a one-row seed file as a live vector source. That left the subsystem half-correct in prose and half-fictional in runtime behavior.
+**Outcome:** The compatibility KB can now be refreshed locally on purpose, and the legacy adapter only exposes it once the corpus is actually maintained. The MLX pipeline is still absent, but the runtime no longer pretends the seed file alone is a usable vector store.
+**Lesson:** If a compatibility layer exists, give it a small real maintenance path and gate its read surface on that path. Otherwise the system keeps shipping placeholders that look more operational than they are.
+
 ### 2026-03-24 — [kb-health] Added explicit knowledge-base and MLX health reporting
 
 **Proposal:** spontaneous

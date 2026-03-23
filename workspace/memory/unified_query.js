@@ -171,6 +171,24 @@ function makeVectorStoreAdapter(opts = {}) {
     opts.path,
     COMPATIBILITY_DEFAULT_SOURCE_PATHS.vector,
   );
+  const lastSyncPath = path.join(path.dirname(jsonlPath), "last_sync.txt");
+
+  function canExposeCompatibilityCorpus() {
+    if (!fs.existsSync(jsonlPath) || !fs.existsSync(lastSyncPath)) {
+      return false;
+    }
+
+    const lastSyncRaw = fs.readFileSync(lastSyncPath, "utf8").trim();
+    if (toTimestampMs(lastSyncRaw) === null) {
+      return false;
+    }
+
+    const lineCount = fs
+      .readFileSync(jsonlPath, "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0).length;
+    return lineCount > 1;
+  }
 
   return {
     id,
@@ -178,7 +196,7 @@ function makeVectorStoreAdapter(opts = {}) {
       if (Array.isArray(opts.fixtureItems)) {
         return opts.fixtureItems;
       }
-      if (!fs.existsSync(jsonlPath)) {
+      if (!canExposeCompatibilityCorpus()) {
         return [];
       }
       const limit = Math.max(1, Number(params.window || params.limit || 50));

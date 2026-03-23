@@ -133,7 +133,15 @@ def collect_knowledge_base_status(
     expected_paths = [(kb_root / rel) for rel in MLX_EXPECTED_FILES]
     present = [path for path in expected_paths if path.exists()]
     missing = [path for path in expected_paths if not path.exists()]
-    top_level_entries = sorted(child.name for child in kb_root.iterdir()) if kb_root.exists() else []
+    top_level_entries = (
+        sorted(
+            child.name
+            for child in kb_root.iterdir()
+            if child.name not in {"__pycache__"} and not child.name.startswith(".")
+        )
+        if kb_root.exists()
+        else []
+    )
     last_sync_raw, last_sync_dt = _read_last_sync(last_sync_path)
     entity_line_count = _count_lines(entities_path)
     last_sync_age_days = (

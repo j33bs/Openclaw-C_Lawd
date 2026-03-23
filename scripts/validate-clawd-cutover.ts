@@ -81,6 +81,7 @@ const checks: CheckResult[] = [
     "workspace/research/TACTI_framework_integration.md",
     "workspace/research/IMPLEMENTATION_ROADMAP.md",
     "workspace/evolution/kb_status.py",
+    "workspace/knowledge_base/refresh_seed.py",
     "workspace/knowledge_base/data/entities.jsonl",
     "profile/user_memory.jsonl",
   ].map(checkExists),
@@ -97,6 +98,11 @@ const checks: CheckResult[] = [
     "workspace/knowledge_base/README.md",
     "compatibility seed only",
     "kb-readme-documents-seed-only-status",
+  ),
+  checkContains(
+    "workspace/knowledge_base/README.md",
+    "refresh_seed.py",
+    "kb-readme-documents-refresh-command",
   ),
   checkContains(".env.example", "OPENCLAW_INTERBEING_DALI_REMOTE_HOST", "env-documents-dali-host"),
   checkContains(
