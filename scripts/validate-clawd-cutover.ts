@@ -80,6 +80,7 @@ const checks: CheckResult[] = [
     "workspace/governance/OPEN_QUESTIONS.md",
     "workspace/research/TACTI_framework_integration.md",
     "workspace/research/IMPLEMENTATION_ROADMAP.md",
+    "workspace/evolution/kb_status.py",
     "workspace/knowledge_base/data/entities.jsonl",
     "profile/user_memory.jsonl",
   ].map(checkExists),
@@ -91,6 +92,11 @@ const checks: CheckResult[] = [
     "nodes/c_lawd/CONVERSATION_KERNEL.md",
     "do not claim side effects without receipts",
     "kernel-enforces-receipts",
+  ),
+  checkContains(
+    "workspace/knowledge_base/README.md",
+    "compatibility seed only",
+    "kb-readme-documents-seed-only-status",
   ),
   checkContains(".env.example", "OPENCLAW_INTERBEING_DALI_REMOTE_HOST", "env-documents-dali-host"),
   checkContains(

@@ -10,6 +10,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+if __package__:
+    from .knowledge_base_health import collect_knowledge_base_status
+else:  # pragma: no cover - script/local import compatibility
+    from knowledge_base_health import collect_knowledge_base_status
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DAILY_LOG_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.md$")
 SESSION_EXPORT_RE = re.compile(
@@ -63,10 +68,14 @@ STORE_SPECS: tuple[dict[str, Any], ...] = (
         "stale_days": 90,
     },
     {
-        "name": "semantic_entities",
-        "label": "Semantic entities",
-        "kind": "text_file",
-        "paths": ("workspace/knowledge_base/data/entities.jsonl",),
+        "name": "knowledge_base",
+        "label": "Knowledge base",
+        "kind": "knowledge_base",
+        "paths": (
+            "workspace/knowledge_base/README.md",
+            "workspace/knowledge_base/data/entities.jsonl",
+            "workspace/knowledge_base/data/last_sync.txt",
+        ),
         "required": False,
         "warn_days": 14,
         "stale_days": 45,
@@ -286,6 +295,34 @@ def _store_record(spec: dict[str, Any], *, repo_root: Path, now: datetime) -> di
         details["invalid_exports"] = invalid
         total_bytes = sum(entry["path"].stat().st_size for entry in exports)
         file_count = len(exports)
+    elif kind == "knowledge_base":
+        kb_report = collect_knowledge_base_status(repo_root=repo_root, now=now)
+        entities_path = repo_root / kb_report["entities"]["path"]
+        selected_path = entities_path if entities_path.exists() else None
+        last_sync = kb_report["last_sync"].get("timestamp")
+        if last_sync:
+            last_updated = _parse_datetime(last_sync)
+        elif selected_path is not None:
+            last_updated = datetime.fromtimestamp(selected_path.stat().st_mtime, tz=timezone.utc)
+        file_count = len(available_paths)
+        total_bytes = sum(path.stat().st_size for path in available_paths if path.is_file())
+        details = {
+            "kb_status": kb_report["status"],
+            "health_warnings": kb_report["warnings"],
+            "top_level_entries": kb_report["top_level_entries"],
+            "entity_line_count": kb_report["entities"]["line_count"],
+            "entity_bytes": kb_report["entities"]["bytes"],
+            "last_sync": kb_report["last_sync"],
+            "mlx_pipeline": kb_report["mlx_pipeline"],
+            "mlx_runtime": kb_report["mlx_runtime"],
+        }
+        status = {
+            "healthy": "fresh",
+            "warning": "warning",
+            "seed_only": "stale",
+            "stale": "stale",
+            "missing": "missing",
+        }.get(kb_report["status"], "warning")
     else:
         file_count = len(available_paths)
         total_bytes = sum(path.stat().st_size for path in available_paths)
@@ -310,7 +347,9 @@ def _store_record(spec: dict[str, Any], *, repo_root: Path, now: datetime) -> di
         if selected_path is not None and last_updated is None:
             last_updated = datetime.fromtimestamp(selected_path.stat().st_mtime, tz=timezone.utc)
 
-    if selected_path is None:
+    if kind == "knowledge_base":
+        age_days = round((now - last_updated).total_seconds() / 86400, 2) if last_updated else None
+    elif selected_path is None:
         status = "missing"
         age_days = None
     else:
@@ -327,7 +366,7 @@ def _store_record(spec: dict[str, Any], *, repo_root: Path, now: datetime) -> di
             status = "stale"
 
     conflict_paths: list[str] = []
-    if len(available_paths) > 1:
+    if kind != "knowledge_base" and len(available_paths) > 1:
         digests = {_path_digest(path) for path in available_paths}
         if len(digests) > 1:
             conflict_paths = [_relative(path, repo_root) for path in available_paths]
@@ -434,6 +473,9 @@ def collect_memory_audit(
                     "message": f"conflicting candidate files present: {', '.join(store['conflict_paths'])}",
                 }
             )
+        if store["kind"] == "knowledge_base":
+            for message in store["details"].get("health_warnings", []):
+                warnings.append({"check": store["name"], "message": message})
 
     for invalid in invalid_logs:
         failures.append({"check": "daily_logs", "message": f"invalid daily log filename: {invalid['path']}"})

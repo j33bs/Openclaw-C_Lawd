@@ -22,8 +22,10 @@ from pathlib import Path
 
 if __package__:
     from .memory_health import build_memory_freshness_index
+    from .knowledge_base_health import build_knowledge_base_health_signal
 else:  # pragma: no cover - script/local import compatibility
     from memory_health import build_memory_freshness_index
+    from knowledge_base_health import build_knowledge_base_health_signal
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 
@@ -259,6 +261,7 @@ def run_assessment() -> dict:
         "dead_code": dead_code_estimate(),
         "memory_coverage": memory_coverage(),
         "memory_freshness": build_memory_freshness_index(repo_root=REPO_ROOT),
+        "knowledge_base": build_knowledge_base_health_signal(repo_root=REPO_ROOT),
         "capabilities": capability_inventory(),
         "branch_drift": branch_drift(),
     }
@@ -290,6 +293,19 @@ def _traffic_light(report: dict) -> list[str]:
         lines.append(f"🟡 memory freshness: attention -> {', '.join(warning_categories)}")
     else:
         lines.append("🟢 memory freshness: all tracked stores are within freshness targets")
+
+    # Knowledge base / MLX status
+    kb = report.get("knowledge_base", {})
+    kb_status = kb.get("status")
+    kb_warnings = kb.get("warnings", [])
+    if kb_status == "healthy":
+        lines.append("🟢 knowledge base: KB scaffold and MLX runtime look ready")
+    elif kb_status == "warning":
+        detail = kb_warnings[0] if kb_warnings else "knowledge-base attention required"
+        lines.append(f"🟡 knowledge base: {detail}")
+    elif kb_status in {"seed_only", "missing", "stale"}:
+        detail = kb_warnings[0] if kb_warnings else f"knowledge-base status is {kb_status}"
+        lines.append(f"🔴 knowledge base: {detail}")
 
     # Evolution recency
     er = report["evolution_recency"]

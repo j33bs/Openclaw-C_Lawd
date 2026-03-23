@@ -33,10 +33,10 @@ _Last updated: 2026-03-17_
 
 ### 2. Knowledge Base
 
-- **Status:** CorrespondenceStore + HiveMind + Graph + Research System active; QMD MCP on port 8181 should be treated as degraded unless a live probe says otherwise.
+- **Status:** Repo-local `workspace/knowledge_base/` is currently a compatibility seed, not a live MLX/vector pipeline. QMD MCP on port 8181 should be treated as degraded unless a live probe says otherwise.
 - **Novelty:** Implemented `novelty.py` for novelty-aware retrieval.
 - **Content:** Added 14+ PDFs on agent architecture (Soar, dMARS, OpenAI).
-- **Recent note:** KB sync remains an actively monitored maintenance surface.
+- **Recent note:** KB sync remains an actively monitored maintenance surface, and KB/MLX health should be re-verified with `python3 workspace/evolution/kb_status.py` rather than inferred from old notes.
 
 ### 3. Daily Briefing
 

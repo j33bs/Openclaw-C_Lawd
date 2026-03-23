@@ -139,8 +139,7 @@ python workspace/research/research_ingest.py add <url>
 python workspace/research/research_ingest.py search <query>
 
 # Knowledge Base
-python workspace/knowledge_base/kb.py sync
-python workspace/knowledge_base/kb.py search <query>
+python workspace/evolution/kb_status.py
 
 # Time Management
 python workspace/time_management/time_management.py tip

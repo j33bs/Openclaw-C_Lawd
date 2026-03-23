@@ -87,8 +87,11 @@ class TestMemoryHealthReports(unittest.TestCase):
                 now=datetime(2026, 3, 23, 12, 0, tzinfo=timezone.utc),
             )
             self.assertIn("daily_logs", [store["name"] for store in report["stores"]])
-            self.assertEqual(report["by_status"].get("fresh"), 9)
-            self.assertEqual(report["stale_categories"], [])
+            self.assertEqual(report["by_status"].get("fresh"), 8)
+            self.assertEqual(report["stale_categories"], ["knowledge_base"])
+            kb_store = next(store for store in report["stores"] if store["name"] == "knowledge_base")
+            self.assertEqual(kb_store["status"], "stale")
+            self.assertEqual(kb_store["details"]["kb_status"], "seed_only")
 
     def test_memory_status_reports_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -132,6 +135,9 @@ class TestMemoryHealthReports(unittest.TestCase):
             )
             self.assertTrue(audit["ok"])
             self.assertEqual(audit["summary"]["session_exports_checked"], 1)
+            self.assertEqual(audit["summary"]["warnings"], 3)
+            warning_checks = {warning["check"] for warning in audit["warnings"]}
+            self.assertIn("knowledge_base", warning_checks)
 
     def test_memory_summary_filters_window(self) -> None:
         with tempfile.TemporaryDirectory() as td:

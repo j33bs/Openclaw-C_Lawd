@@ -19,6 +19,14 @@ _A record of how the system changes over time: what changed, why, and what was l
 
 ## Log
 
+### 2026-03-24 — [kb-health] Added explicit knowledge-base and MLX health reporting
+
+**Proposal:** spontaneous
+**Changed:** Added `workspace/evolution/knowledge_base_health.py` and `kb_status.py`, integrated KB/MLX status into `fitness.py`, folded the same KB truth into `memory_health.py`/`memory_status.py`/`memory_audit.py`, added focused unit coverage, and corrected stale docs so the repo now describes `workspace/knowledge_base/` as a compatibility seed rather than an implied live MLX pipeline.
+**Why it mattered:** The repo had drift between memory notes and reality: the top-level KB tree was just seed data, but older notes and docs still implied `kb.py`, `indexer.py`, and `driver_mlx.py` existed. That made the weak spot hard to reason about honestly.
+**Outcome:** Operators can now ask one question, get one answer: the current KB surface is seed-only, its sync timestamp is explicit, and any missing MLX/runtime pieces show up directly in `kb_status.py`, `fitness.py`, and the main memory status/audit surfaces.
+**Lesson:** When a subsystem is weak, the first honest improvement is to make its actual state explicit. Otherwise memory and docs accumulate fiction faster than code catches up.
+
 ### 2026-03-23 — [memory-health] Folded heartbeat state and session exports into health checks
 
 **Proposal:** spontaneous (continuation of `workspace/evolution/200_IMPROVEMENTS.md` implementation)
