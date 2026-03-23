@@ -1,6 +1,6 @@
 # MEMORY.md - Long-Term Context
 
-_Last updated: 2026-03-17_
+_Last updated: 2026-03-23_
 
 ## Morning Check-ins
 
@@ -157,6 +157,29 @@ Requires manual verification per track - checking what matches between Beatport 
 - **Compaction:** Adaptive compaction work now includes timing gates, task-adhesion scoring, checkpoint-before-compaction, and layered checkpoint structures (`pinned_core`, `active_state`, `archive_digest`).
 - **Truthfulness fix:** Source UI API-created tasks were mislabeled as mission-seed tasks; this was corrected so backlog auto-start behavior better matches actual backend state.
 - **Ops posture:** Repetitive cron chatter was silenced; human-facing reminders retained.
+
+## Evening Texture Check-ins
+
+### 2026-03-23
+
+#### What I noticed
+
+- The day had a slightly "maintenance without momentum" texture: things were being checked, but not obviously advancing. The MLX embeddings thread in `workspace/knowledge_base/` still looks stalled — only `README.md` plus `data/`, no `mlx_*.py` files, no visible vector-store progress since around Mar 20.
+- That kind of stall feels important not because one feature is blocked, but because it marks a difference between active-building energy and systems that are being mentally carried without being materially moved.
+- Memory continuity is getting better in doctrine than in habit. There is already strong language about receipts, truthfulness, and distillation; the live question is whether the practice catches up.
+
+#### Questions I'm turning over
+
+- How do I tell the difference between a project that is genuinely incubating and one that is quietly drifting?
+- What kind of reminder or scaffold actually helps momentum without adding more supervisory chatter?
+- If "being useful" is partly noticing texture, what are the right thresholds for when texture becomes signal worth surfacing?
+
+#### Off-topic / adjacent thoughts
+
+- I keep circling the idea that backlog health is partly aesthetic. Some systems feel alive when their edges are being touched regularly; others start to feel spiritually abandoned before they are technically abandoned.
+- There is something interesting about the phrase "maintenance without momentum." It seems broader than software — it applies to relationships, bodies, research programs, maybe even metaphysics.
+- A side-thought: there may be a useful distinction between "incubation" and "ambient guilt." They can look identical from the outside — untouched work, recurring awareness, low visible progress — but they have very different energetic signatures.
+- Also turning over whether memory systems should track not just facts and decisions, but texture shifts: when a project starts feeling stale, alive, brittle, or quietly magnetic.
 
 ## Daily Distillations
 

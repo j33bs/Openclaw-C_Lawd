@@ -5,20 +5,29 @@ This file is the canonical long-term memory root for node `c_lawd`.
 ## Pinned State
 
 ### Active doctrine
+
 - Mission: Build a cohesive, integrated collective intelligence symbiote that helps beings think, feel, remember, coordinate, and evolve together.
 - Style: direct, concise, efficient, elegant; less translation, more signal.
 - Truthfulness rule: do not claim flow, completion, or side effects without receipts.
+- Operational rule: before claiming semantic memory recall is degraded, re-verify with `node openclaw.mjs memory status --deep`.
+- Operational fact (2026-03-24): live semantic recall on this machine uses local Ollama embeddings (`nomic-embed-text`), not OpenAI embeddings.
+- Operational fact (2026-03-24): live recall scope on this machine is `sources=["memory","sessions"]` with `extraPaths=["nodes/c_lawd/MEMORY.md"]`.
+- Operational fact (2026-03-24): session-memory backfill is present in `~/.openclaw/memory/main.sqlite` (`246` session files / `3590` session chunks at last verification).
 
 ### Active blockers
+
 - Cross-surface drift can still appear between backend truth and Source UI render state.
 - QMD MCP / port 8181 remains a recurring ops concern.
 - Memory continuity is improving, but weekly distillation into canonical memory still needs discipline.
 
 ### Surface responsibilities
+
 - Telegram: concise execution-first companionship.
 - Source / Dali interface: keep task/state claims grounded in actual backend truth.
 - Memory: protect compaction continuity and promote only durable state.
+- Node doctrine note: `nodes/c_lawd/MEMORY.md` is pinned state. Defaults do not include it automatically, but this machine's live memory-search config currently does via `agents.defaults.memorySearch.extraPaths`.
 
 Migration policy (one cycle):
+
 - Legacy references to `system2` / `system-2` are normalized to `c_lawd`.
 - Existing System-2 evidence and governance docs remain valid and are not deleted immediately.
