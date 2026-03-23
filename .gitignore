@@ -152,6 +152,7 @@ docs/superpowers
 # Local daemon/sync runtime artifacts (keep daily notes, ignore ephemeral state)
 .state/slm-daemon-watcher.state
 handoff/processed/
+memory/*-daemon.log
 memory/.daemon-last-state
 memory/.daemon-state.json
 memory/.daemon-watcher-state.json
