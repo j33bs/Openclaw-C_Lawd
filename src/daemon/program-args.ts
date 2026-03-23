@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
 import { isBunRuntime, isNodeRuntime } from "./runtime-binary.js";
 
 type GatewayProgramArgs = {
@@ -13,6 +14,21 @@ async function resolveCliEntrypointPathForService(): Promise<string> {
   const argv1 = process.argv[1];
   if (!argv1) {
     throw new Error("Unable to resolve CLI entrypoint path");
+  }
+
+  const packageRoot = resolveOpenClawPackageRootSync({
+    moduleUrl: import.meta.url,
+    argv1,
+  });
+  if (packageRoot) {
+    for (const candidate of buildPackageRootDistCandidates(packageRoot)) {
+      try {
+        await fs.access(candidate);
+        return candidate;
+      } catch {
+        // keep going
+      }
+    }
   }
 
   const normalized = path.resolve(argv1);
@@ -59,6 +75,16 @@ async function resolveRealpathSafe(inputPath: string): Promise<string> {
   } catch {
     return inputPath;
   }
+}
+
+function buildPackageRootDistCandidates(packageRoot: string): string[] {
+  const distDir = path.resolve(packageRoot, "dist");
+  return [
+    path.join(distDir, "entry.js"),
+    path.join(distDir, "entry.mjs"),
+    path.join(distDir, "index.js"),
+    path.join(distDir, "index.mjs"),
+  ];
 }
 
 function buildDistCandidates(...inputs: string[]): string[] {

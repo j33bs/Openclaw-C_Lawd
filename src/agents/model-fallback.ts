@@ -34,6 +34,12 @@ import { isLikelyContextOverflowError } from "./pi-embedded-helpers.js";
 
 const log = createSubsystemLogger("model-fallback");
 
+const TIMEOUT_COOLDOWN_MS = 5 * 60 * 1000;
+const TIMEOUT_COOLDOWN_SCOPE_DELIMITER = "::";
+const TIMEOUT_COOLDOWN_STATE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_TIMEOUT_COOLDOWN_KEYS = 256;
+const timeoutCooldownUntil = new Map<string, number>();
+
 export type ModelFallbackRunOptions = {
   allowTransientCooldownProbe?: boolean;
 };
@@ -202,6 +208,74 @@ function throwFallbackFailureSummary(params: {
     },
   );
 }
+
+function resolveTimeoutCooldownKey(candidate: ModelCandidate, agentDir?: string): string {
+  const scope = String(agentDir ?? "").trim();
+  const modelScope = `${candidate.provider}/${candidate.model}`;
+  return scope ? `${scope}${TIMEOUT_COOLDOWN_SCOPE_DELIMITER}${modelScope}` : modelScope;
+}
+
+function pruneTimeoutCooldownState(now: number): void {
+  for (const [key, until] of timeoutCooldownUntil) {
+    if (!Number.isFinite(until) || until <= now - TIMEOUT_COOLDOWN_STATE_TTL_MS) {
+      timeoutCooldownUntil.delete(key);
+    }
+  }
+}
+
+function enforceTimeoutCooldownStateCap(): void {
+  while (timeoutCooldownUntil.size > MAX_TIMEOUT_COOLDOWN_KEYS) {
+    let oldestKey: string | null = null;
+    let oldestUntil = Number.POSITIVE_INFINITY;
+    for (const [key, until] of timeoutCooldownUntil) {
+      if (until < oldestUntil) {
+        oldestKey = key;
+        oldestUntil = until;
+      }
+    }
+    if (!oldestKey) {
+      break;
+    }
+    timeoutCooldownUntil.delete(oldestKey);
+  }
+}
+
+function getTimeoutCooldownRemainingMs(now: number, key: string): number {
+  pruneTimeoutCooldownState(now);
+  const until = timeoutCooldownUntil.get(key);
+  if (!Number.isFinite(until)) {
+    return 0;
+  }
+  const remaining = until - now;
+  if (remaining <= 0) {
+    timeoutCooldownUntil.delete(key);
+    return 0;
+  }
+  return remaining;
+}
+
+function markTimeoutCooldown(now: number, key: string): void {
+  timeoutCooldownUntil.set(key, now + TIMEOUT_COOLDOWN_MS);
+  enforceTimeoutCooldownStateCap();
+}
+
+function clearTimeoutCooldown(key: string): void {
+  timeoutCooldownUntil.delete(key);
+}
+
+/** @internal – exposed for unit tests only */
+export const _timeoutCooldownInternals = {
+  timeoutCooldownUntil,
+  TIMEOUT_COOLDOWN_MS,
+  TIMEOUT_COOLDOWN_SCOPE_DELIMITER,
+  TIMEOUT_COOLDOWN_STATE_TTL_MS,
+  MAX_TIMEOUT_COOLDOWN_KEYS,
+  resolveTimeoutCooldownKey,
+  pruneTimeoutCooldownState,
+  getTimeoutCooldownRemainingMs,
+  markTimeoutCooldown,
+  clearTimeoutCooldown,
+} as const;
 
 function resolveImageFallbackCandidates(params: {
   cfg: OpenClawConfig | undefined;
@@ -539,6 +613,37 @@ export async function runWithModelFallback<T>(params: {
     const isPrimary = i === 0;
     const requestedModel =
       params.provider === candidate.provider && params.model === candidate.model;
+    const now = Date.now();
+    const timeoutCooldownKey = resolveTimeoutCooldownKey(candidate, params.agentDir);
+    const timeoutCooldownRemainingMs = getTimeoutCooldownRemainingMs(now, timeoutCooldownKey);
+    const hasNextCandidate = i < candidates.length - 1;
+    if (timeoutCooldownRemainingMs > 0 && hasNextCandidate) {
+      const error =
+        `Model ${candidate.provider}/${candidate.model} is in timeout cooldown ` +
+        `(${timeoutCooldownRemainingMs}ms remaining)`;
+      attempts.push({
+        provider: candidate.provider,
+        model: candidate.model,
+        error,
+        reason: "timeout",
+      });
+      logModelFallbackDecision({
+        decision: "skip_candidate",
+        runId: params.runId,
+        requestedProvider: params.provider,
+        requestedModel: params.model,
+        candidate,
+        attempt: i + 1,
+        total: candidates.length,
+        reason: "timeout",
+        error,
+        nextCandidate: candidates[i + 1],
+        isPrimary,
+        requestedModelMatched: requestedModel,
+        fallbackConfigured: hasFallbackCandidates,
+      });
+      continue;
+    }
     let runOptions: ModelFallbackRunOptions | undefined;
     let attemptedDuringCooldown = false;
     let transientProbeProviderForAttempt: string | null = null;
@@ -687,6 +792,7 @@ export async function runWithModelFallback<T>(params: {
           `Model "${sanitizeForLog(notFoundAttempt.provider)}/${sanitizeForLog(notFoundAttempt.model)}" not found. Fell back to "${sanitizeForLog(candidate.provider)}/${sanitizeForLog(candidate.model)}".`,
         );
       }
+      clearTimeoutCooldown(timeoutCooldownKey);
       return attemptRun.success;
     }
     const err = attemptRun.error;
@@ -735,6 +841,9 @@ export async function runWithModelFallback<T>(params: {
         status: described.status,
         code: described.code,
       });
+      if (described.reason === "timeout" && hasNextCandidate) {
+        markTimeoutCooldown(Date.now(), timeoutCooldownKey);
+      }
       logModelFallbackDecision({
         decision: "candidate_failed",
         runId: params.runId,

@@ -2,14 +2,18 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { resetLogger, setLoggerOverride } from "../logging/logger.js";
 import type { AuthProfileStore } from "./auth-profiles.js";
 import { saveAuthProfileStore } from "./auth-profiles.js";
 import { AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
 import { isAnthropicBillingError } from "./live-auth-keys.js";
-import { runWithImageModelFallback, runWithModelFallback } from "./model-fallback.js";
+import {
+  _timeoutCooldownInternals,
+  runWithImageModelFallback,
+  runWithModelFallback,
+} from "./model-fallback.js";
 import { makeModelFallbackCfg } from "./test-helpers/model-fallback-config-fixture.js";
 
 const makeCfg = makeModelFallbackCfg;
@@ -188,6 +192,15 @@ const INSUFFICIENT_QUOTA_PAYLOAD =
 const MODEL_COOLDOWN_MESSAGE = "model_cooldown: All credentials for model gpt-5 are cooling down";
 // SDK/transport compatibility marker, not a provider API contract.
 const CONNECTION_ERROR_MESSAGE = "Connection error.";
+
+beforeEach(() => {
+  _timeoutCooldownInternals.timeoutCooldownUntil.clear();
+});
+
+afterEach(() => {
+  _timeoutCooldownInternals.timeoutCooldownUntil.clear();
+  vi.useRealTimers();
+});
 
 describe("runWithModelFallback", () => {
   it("keeps openai gpt-5.3 codex on the openai provider before running", async () => {
@@ -856,6 +869,91 @@ describe("runWithModelFallback", () => {
         reason: "deadline exceeded",
       }),
     });
+  });
+
+  it("skips recently timed-out models on the next turn when fallbacks exist", async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    vi.setSystemTime(now);
+
+    const cfg = makeCfg();
+    const run = vi.fn().mockImplementation(async (provider, model) => {
+      if (provider === "openai" && model === "gpt-4.1-mini") {
+        throw Object.assign(new Error("request timed out"), { code: "ETIMEDOUT" });
+      }
+      if (provider === "anthropic" && model === "claude-haiku-3-5") {
+        return "ok";
+      }
+      throw new Error(`unexpected candidate: ${provider}/${model}`);
+    });
+
+    const first = await runWithModelFallback({
+      cfg,
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      agentDir: "/tmp/timeout-skip-agent",
+      run,
+    });
+    expect(first.result).toBe("ok");
+    expect(run.mock.calls.map(([provider, model]) => [provider, model])).toEqual([
+      ["openai", "gpt-4.1-mini"],
+      ["anthropic", "claude-haiku-3-5"],
+    ]);
+
+    run.mockClear();
+
+    const second = await runWithModelFallback({
+      cfg,
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      agentDir: "/tmp/timeout-skip-agent",
+      run,
+    });
+    expect(second.result).toBe("ok");
+    expect(run.mock.calls.map(([provider, model]) => [provider, model])).toEqual([
+      ["anthropic", "claude-haiku-3-5"],
+    ]);
+  });
+
+  it("retries a timed-out model after the timeout cooldown expires", async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    vi.setSystemTime(now);
+
+    const cfg = makeCfg();
+    const run = vi.fn().mockImplementation(async (provider, model) => {
+      if (provider === "openai" && model === "gpt-4.1-mini") {
+        throw Object.assign(new Error("request timed out"), { code: "ETIMEDOUT" });
+      }
+      if (provider === "anthropic" && model === "claude-haiku-3-5") {
+        return "ok";
+      }
+      throw new Error(`unexpected candidate: ${provider}/${model}`);
+    });
+
+    await runWithModelFallback({
+      cfg,
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      agentDir: "/tmp/timeout-expiry-agent",
+      run,
+    });
+
+    run.mockClear();
+    vi.setSystemTime(now + _timeoutCooldownInternals.TIMEOUT_COOLDOWN_MS + 1);
+
+    const result = await runWithModelFallback({
+      cfg,
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      agentDir: "/tmp/timeout-expiry-agent",
+      run,
+    });
+    expect(result.result).toBe("ok");
+    expect(run.mock.calls.map(([provider, model]) => [provider, model])).toEqual([
+      ["openai", "gpt-4.1-mini"],
+      ["anthropic", "claude-haiku-3-5"],
+    ]);
   });
 
   it("falls back on abort errors with reason: abort", async () => {
