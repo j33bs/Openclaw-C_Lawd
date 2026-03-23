@@ -33,6 +33,7 @@ import { isRoutableChannel, routeReply } from "./route-reply.js";
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
 import { createTypingSignaler } from "./typing-mode.js";
 import type { TypingController } from "./typing.js";
+import { captureWorklogIfNeeded } from "./worklog-capture.js";
 
 export function createFollowupRunner(params: {
   opts?: GetReplyOptions;
@@ -338,6 +339,23 @@ export function createFollowupRunner(params: {
 
       if (finalPayloads.length === 0) {
         return;
+      }
+
+      try {
+        await captureWorklogIfNeeded({
+          cfg: queued.run.config,
+          workspaceDir: queued.run.workspaceDir,
+          sessionKey: queued.run.sessionKey,
+          chatType: queued.originatingChatType,
+          originatingChannel: queued.originatingChannel,
+          messageProvider: queued.run.messageProvider,
+          senderIsOwner: queued.run.senderIsOwner,
+          promptSummary: queued.summaryLine ?? queued.prompt,
+          payloads: finalPayloads,
+          toolMetas: runResult.toolMetas,
+        });
+      } catch (err) {
+        logVerbose(`followup worklog capture failed: ${String(err)}`);
       }
 
       if (autoCompactionCount > 0) {

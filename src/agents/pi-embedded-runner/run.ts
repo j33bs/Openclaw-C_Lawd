@@ -1639,6 +1639,7 @@ export async function runEmbeddedPiAgent(
                 aborted,
                 systemPromptReport: attempt.systemPromptReport,
               },
+              toolMetas: attempt.toolMetas,
               didSendViaMessagingTool: attempt.didSendViaMessagingTool,
               didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
               messagingToolSentTexts: attempt.messagingToolSentTexts,
@@ -1689,6 +1690,7 @@ export async function runEmbeddedPiAgent(
                   ]
                 : undefined,
             },
+            toolMetas: attempt.toolMetas,
             didSendViaMessagingTool: attempt.didSendViaMessagingTool,
             didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
             messagingToolSentTexts: attempt.messagingToolSentTexts,

@@ -57,6 +57,7 @@ import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-t
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
 import { createTypingSignaler } from "./typing-mode.js";
 import type { TypingController } from "./typing.js";
+import { captureWorklogIfNeeded } from "./worklog-capture.js";
 
 const BLOCK_REPLY_SEND_TIMEOUT_MS = 15_000;
 
@@ -534,6 +535,23 @@ export async function runReplyAgent(params: {
       hasReminderCommitment && successfulCronAdds === 0 && !coveredByExistingCron
         ? appendUnscheduledReminderNote(replyPayloads)
         : replyPayloads;
+
+    try {
+      await captureWorklogIfNeeded({
+        cfg,
+        workspaceDir: followupRun.run.workspaceDir,
+        sessionKey,
+        chatType: sessionCtx.ChatType,
+        originatingChannel: sessionCtx.OriginatingChannel,
+        messageProvider: followupRun.run.messageProvider,
+        senderIsOwner: followupRun.run.senderIsOwner,
+        promptSummary: followupRun.summaryLine ?? commandBody,
+        payloads: guardedReplyPayloads,
+        toolMetas: runResult.toolMetas,
+      });
+    } catch (err) {
+      logVerbose(`worklog capture failed: ${String(err)}`);
+    }
 
     await signalTypingIfNeeded(guardedReplyPayloads, typingSignals);
 
