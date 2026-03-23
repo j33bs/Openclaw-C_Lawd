@@ -148,3 +148,12 @@ docs/superpowers
 !memory/
 !memory/**
 !nodes/c_lawd/**
+
+# Local daemon/sync runtime artifacts (keep daily notes, ignore ephemeral state)
+.state/slm-daemon-watcher.state
+handoff/processed/
+memory/.daemon-last-state
+memory/.daemon-state.json
+memory/.daemon-watcher-state.json
+memory/daemon-watcher-state.json
+workspace/knowledge_base/data/last_sync.txt
