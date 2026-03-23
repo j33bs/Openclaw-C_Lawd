@@ -684,6 +684,7 @@ export const MemorySearchSchema = z
         onSearch: z.boolean().optional(),
         watch: z.boolean().optional(),
         watchDebounceMs: z.number().int().nonnegative().optional(),
+        idleSeconds: z.number().int().nonnegative().optional(),
         intervalMinutes: z.number().int().nonnegative().optional(),
         sessions: z
           .object({

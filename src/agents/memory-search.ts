@@ -57,6 +57,7 @@ export type ResolvedMemorySearchConfig = {
     onSearch: boolean;
     watch: boolean;
     watchDebounceMs: number;
+    idleSeconds: number;
     intervalMinutes: number;
     sessions: {
       deltaBytes: number;
@@ -239,6 +240,7 @@ function mergeConfig(
       overrides?.sync?.watchDebounceMs ??
       defaults?.sync?.watchDebounceMs ??
       DEFAULT_WATCH_DEBOUNCE_MS,
+    idleSeconds: Math.max(0, overrides?.sync?.idleSeconds ?? defaults?.sync?.idleSeconds ?? 0),
     intervalMinutes: overrides?.sync?.intervalMinutes ?? defaults?.sync?.intervalMinutes ?? 0,
     sessions: {
       deltaBytes:

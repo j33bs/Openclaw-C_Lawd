@@ -813,6 +813,10 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       clearTimeout(this.watchTimer);
       this.watchTimer = null;
     }
+    if (this.idleSyncTimer) {
+      clearTimeout(this.idleSyncTimer);
+      this.idleSyncTimer = null;
+    }
     if (this.sessionWatchTimer) {
       clearTimeout(this.sessionWatchTimer);
       this.sessionWatchTimer = null;

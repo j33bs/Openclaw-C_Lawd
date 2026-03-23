@@ -9,6 +9,7 @@ import { ResolvedMemorySearchConfig } from "../agents/memory-search.js";
 import { type OpenClawConfig } from "../config/config.js";
 import { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
 import { withFileLock } from "../infra/file-lock.js";
+import { getSystemIdleMs } from "../infra/system-idle.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { resolveUserPath } from "../utils.js";
@@ -75,6 +76,7 @@ const VECTOR_TABLE = "chunks_vec";
 const FTS_TABLE = "chunks_fts";
 const EMBEDDING_CACHE_TABLE = "embedding_cache";
 const SESSION_DIRTY_DEBOUNCE_MS = 5000;
+const IDLE_SYNC_RECHECK_MS = 30_000;
 const SESSION_DELTA_READ_CHUNK_BYTES = 64 * 1024;
 const VECTOR_LOAD_TIMEOUT_MS = 30_000;
 const MEMORY_REINDEX_LOCK_OPTIONS = {
@@ -98,6 +100,13 @@ const IGNORED_MEMORY_WATCH_DIR_NAMES = new Set([
 ]);
 
 const log = createSubsystemLogger("memory");
+const AUTO_IDLE_GATED_SYNC_REASONS = new Set([
+  "interval",
+  "search",
+  "session-delta",
+  "session-start",
+  "watch",
+]);
 
 function shouldIgnoreMemoryWatchPath(watchPath: string): boolean {
   const normalized = path.normalize(watchPath);
@@ -141,6 +150,7 @@ export abstract class MemoryManagerSyncOps {
   protected vectorReady: Promise<boolean> | null = null;
   protected watcher: FSWatcher | null = null;
   protected watchTimer: NodeJS.Timeout | null = null;
+  protected idleSyncTimer: NodeJS.Timeout | null = null;
   protected sessionWatchTimer: NodeJS.Timeout | null = null;
   protected sessionUnsubscribe: (() => void) | null = null;
   protected fallbackReason?: string;
@@ -681,6 +691,51 @@ export abstract class MemoryManagerSyncOps {
     }, this.settings.sync.watchDebounceMs);
   }
 
+  private clearIdleSyncTimer(): void {
+    if (!this.idleSyncTimer) {
+      return;
+    }
+    clearTimeout(this.idleSyncTimer);
+    this.idleSyncTimer = null;
+  }
+
+  private scheduleIdleDeferredSync(reason?: string): void {
+    if (this.closed || this.idleSyncTimer) {
+      return;
+    }
+    this.idleSyncTimer = setTimeout(() => {
+      this.idleSyncTimer = null;
+      void this.sync({ reason: reason ?? "watch" }).catch((err) => {
+        log.warn(`memory sync failed (idle-deferred): ${String(err)}`);
+      });
+    }, IDLE_SYNC_RECHECK_MS);
+  }
+
+  private async shouldDeferSyncUntilIdle(params?: {
+    reason?: string;
+    force?: boolean;
+    sessionFiles?: string[];
+  }): Promise<boolean> {
+    const idleSeconds = this.settings.sync.idleSeconds;
+    if (
+      idleSeconds <= 0 ||
+      params?.force ||
+      params?.sessionFiles?.some((sessionFile) => sessionFile.trim().length > 0)
+    ) {
+      return false;
+    }
+    const reason = params?.reason?.trim() ?? "";
+    if (!AUTO_IDLE_GATED_SYNC_REASONS.has(reason)) {
+      return false;
+    }
+    const idleMs = await getSystemIdleMs();
+    if (idleMs === null || idleMs >= idleSeconds * 1000) {
+      return false;
+    }
+    this.scheduleIdleDeferredSync(reason);
+    return true;
+  }
+
   private shouldSyncSessions(
     params?: { reason?: string; force?: boolean; sessionFiles?: string[] },
     needsFullReindex = false,
@@ -949,6 +1004,10 @@ export abstract class MemoryManagerSyncOps {
     sessionFiles?: string[];
     progress?: (update: MemorySyncProgressUpdate) => void;
   }) {
+    if (await this.shouldDeferSyncUntilIdle(params)) {
+      return;
+    }
+    this.clearIdleSyncTimer();
     const progress = params?.progress ? this.createSyncProgress(params.progress) : undefined;
     if (progress) {
       progress.report({
