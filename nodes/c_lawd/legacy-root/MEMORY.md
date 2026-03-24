@@ -56,7 +56,7 @@ _Last updated: 2026-03-17_
 
 - **Runtime:** main model is actively user-switched as needed; current defaults should be treated as operational, not doctrinal.
 - **Modules:** `tacti_core.py`, `relationship_tracker.py`, `arousal_tracker.py` active in `workspace/memory/`.
-- **Dashboard:** Source UI / Dali tasking surface is active at `http://100.113.160.1:18990` (Tailscale primary).
+- **Dashboard (archival note):** Source UI / Dali tasking surface used a Tailscale-hosted endpoint during this period; keep any currently active endpoint in operator-local config rather than tracked repo docs.
 - **Current runtime note:** QMD MCP on port 8181 has been a recurring ops concern.
 - **Model status:** GPU pruned; `ollama qwen3.5:2b` retained as active local model.
 

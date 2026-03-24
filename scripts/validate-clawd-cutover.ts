@@ -55,6 +55,75 @@ function checkNoLegacyPath(relPaths: string[]): CheckResult {
   };
 }
 
+function walk(relDir: string): string[] {
+  const absDir = path.join(repoRoot, relDir);
+  if (!fs.existsSync(absDir)) {
+    return [];
+  }
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+    const relPath = path.join(relDir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...walk(relPath));
+    } else if (entry.isFile()) {
+      out.push(relPath);
+    }
+  }
+  return out;
+}
+
+function checkNoHardcodedSourceUiEndpoints(): CheckResult {
+  const archivalAllowPrefixes = ["nodes/c_lawd/legacy-root/"];
+  const skipPrefixes = [
+    ".git/",
+    "node_modules/",
+    "dist/",
+    "coverage/",
+    "workspace/knowledge_base/data/",
+  ];
+  const candidateFiles = [
+    ...walk("memory"),
+    ...walk("nodes"),
+    ...walk("ops"),
+    ...walk("workspace/governance"),
+    "TOOLS.md",
+    "MEMORY.md",
+    ".env.example",
+  ].filter((relPath, index, arr) => arr.indexOf(relPath) === index);
+
+  const endpointRegex = /https?:\/\/[^\s`"')>]+/g;
+  const offenders: string[] = [];
+
+  for (const relPath of candidateFiles) {
+    if (!exists(relPath) || skipPrefixes.some((prefix) => relPath.startsWith(prefix))) {
+      continue;
+    }
+    const content = read(relPath);
+    const lines = content.split(/\r?\n/);
+    lines.forEach((line, idx) => {
+      if (!/(Source UI|source ui|source-ui|\bDali\b)/i.test(line)) {
+        return;
+      }
+      const matches = line.match(endpointRegex) ?? [];
+      for (const match of matches) {
+        if (archivalAllowPrefixes.some((prefix) => relPath.startsWith(prefix))) {
+          continue;
+        }
+        offenders.push(`${relPath}:${idx + 1} -> ${match}`);
+      }
+    });
+  }
+
+  return {
+    name: "no-hardcoded-source-ui-endpoints-in-tracked-docs",
+    ok: offenders.length === 0,
+    detail:
+      offenders.length === 0
+        ? "no non-archival tracked docs hardcode a Source UI / Dali endpoint"
+        : offenders.join(", "),
+  };
+}
+
 const checks: CheckResult[] = [
   ...[
     "identity/README.md",
@@ -121,6 +190,7 @@ const checks: CheckResult[] = [
     "plugins.load.paths",
     "config-rebind-documents-plugin-path-rebind",
   ),
+  checkNoHardcodedSourceUiEndpoints(),
   checkNoLegacyPath([
     "AGENTS.md",
     "SOUL.md",
