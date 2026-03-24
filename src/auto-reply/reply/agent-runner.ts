@@ -252,6 +252,27 @@ export async function runReplyAgent(params: {
     defaultModel,
     agentCfgContextTokens,
   });
+  const captureWorklogForTurn = async (
+    payloads: ReplyPayload[],
+    toolMetas: Array<{ toolName?: string; meta?: string }>,
+  ) => {
+    try {
+      await captureWorklogIfNeeded({
+        cfg,
+        workspaceDir: followupRun.run.workspaceDir,
+        sessionKey,
+        chatType: sessionCtx.ChatType,
+        originatingChannel: sessionCtx.OriginatingChannel,
+        messageProvider: followupRun.run.messageProvider,
+        senderIsOwner: followupRun.run.senderIsOwner,
+        promptSummary: followupRun.summaryLine ?? commandBody,
+        payloads,
+        toolMetas,
+      });
+    } catch (err) {
+      defaultRuntime.error?.(`worklog capture failed: ${String(err)}`);
+    }
+  };
 
   let responseUsageLine: string | undefined;
   type SessionResetOptions = {
@@ -483,6 +504,7 @@ export async function runReplyAgent(params: {
     // Otherwise, a late typing trigger (e.g. from a tool callback) can outlive the run and
     // keep the typing indicator stuck.
     if (payloadArray.length === 0) {
+      await captureWorklogForTurn(payloadArray, runResult.toolMetas ?? []);
       return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
     }
 
@@ -536,22 +558,7 @@ export async function runReplyAgent(params: {
         ? appendUnscheduledReminderNote(replyPayloads)
         : replyPayloads;
 
-    try {
-      await captureWorklogIfNeeded({
-        cfg,
-        workspaceDir: followupRun.run.workspaceDir,
-        sessionKey,
-        chatType: sessionCtx.ChatType,
-        originatingChannel: sessionCtx.OriginatingChannel,
-        messageProvider: followupRun.run.messageProvider,
-        senderIsOwner: followupRun.run.senderIsOwner,
-        promptSummary: followupRun.summaryLine ?? commandBody,
-        payloads: guardedReplyPayloads,
-        toolMetas: runResult.toolMetas,
-      });
-    } catch (err) {
-      logVerbose(`worklog capture failed: ${String(err)}`);
-    }
+    await captureWorklogForTurn(guardedReplyPayloads, runResult.toolMetas ?? []);
 
     await signalTypingIfNeeded(guardedReplyPayloads, typingSignals);
 

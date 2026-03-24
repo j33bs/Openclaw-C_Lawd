@@ -1,23 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveCronStyleNow } from "../../agents/current-time.js";
+import { isLikelyMutatingToolName } from "../../agents/tool-mutation.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { isInternalMessageChannel } from "../../utils/message-channel.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
 import { type ReplyPayload } from "../types.js";
 import { resolveMemoryFlushRelativePathForRun } from "./memory-flush.js";
 import { resolveOriginMessageProvider } from "./origin-routing.js";
-
-const WORKLOG_MUTATING_TOOLS = new Set([
-  "write",
-  "edit",
-  "apply_patch",
-  "exec",
-  "bash",
-  "process",
-  "gateway",
-  "session_status",
-]);
 const MAX_REQUEST_CHARS = 240;
 const MAX_OUTCOME_CHARS = 320;
 const MAX_TOOL_META_CHARS = 160;
@@ -60,7 +50,7 @@ function summarizeToolMetas(toolMetas: Array<{ toolName?: string; meta?: string 
   const seen = new Set<string>();
   for (const entry of toolMetas) {
     const toolName = entry.toolName?.trim().toLowerCase();
-    if (!toolName || !WORKLOG_MUTATING_TOOLS.has(toolName)) {
+    if (!toolName || !isLikelyMutatingToolName(toolName)) {
       continue;
     }
     const meta = collapseWhitespace(entry.meta ?? "");
@@ -82,7 +72,6 @@ function shouldCaptureWorklog(params: {
   chatType?: string;
   senderIsOwner?: boolean;
   toolSummaries: string[];
-  outcome?: string;
 }): boolean {
   if (params.senderIsOwner !== true) {
     return false;
@@ -94,7 +83,7 @@ function shouldCaptureWorklog(params: {
   if (!channel || isInternalMessageChannel(channel)) {
     return false;
   }
-  return params.toolSummaries.length > 0 && Boolean(params.outcome);
+  return params.toolSummaries.length > 0;
 }
 
 function formatEntry(params: {
@@ -102,7 +91,7 @@ function formatEntry(params: {
   nowMs: number;
   timeLabel: string;
   requestSummary?: string;
-  outcome: string;
+  outcome?: string;
   toolSummaries: string[];
   sessionKey?: string;
 }): string {
@@ -110,7 +99,7 @@ function formatEntry(params: {
   if (params.requestSummary) {
     lines.push(`Request: ${params.requestSummary}`);
   }
-  lines.push(`Outcome: ${params.outcome}`);
+  lines.push(`Outcome: ${params.outcome ?? "(no user-facing reply)"}`);
   lines.push("Changes:");
   for (const summary of params.toolSummaries) {
     lines.push(`- ${summary}`);
@@ -147,7 +136,6 @@ export async function captureWorklogIfNeeded(params: {
       chatType: params.chatType,
       senderIsOwner: params.senderIsOwner,
       toolSummaries,
-      outcome,
     })
   ) {
     return { written: false };
