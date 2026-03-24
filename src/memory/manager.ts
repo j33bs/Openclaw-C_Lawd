@@ -23,6 +23,11 @@ import { isMemoryPath, normalizeExtraMemoryPaths } from "./internal.js";
 import { MemoryManagerEmbeddingOps } from "./manager-embedding-ops.js";
 import { searchKeyword, searchVector } from "./manager-search.js";
 import { extractKeywords } from "./query-expansion.js";
+import {
+  buildSessionEntry,
+  listSessionFilesForAgent,
+  sessionPathForFile,
+} from "./session-files.js";
 import type {
   MemoryEmbeddingProbeResult,
   MemoryProviderStatus,
@@ -41,6 +46,13 @@ const log = createSubsystemLogger("memory");
 
 const INDEX_CACHE = new Map<string, MemoryIndexManager>();
 const INDEX_CACHE_PENDING = new Map<string, Promise<MemoryIndexManager>>();
+
+function normalizeRequestedMemoryLikePath(relPath: string): string {
+  return relPath
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^[./]+/, "");
+}
 
 export async function closeAllMemoryIndexManagers(): Promise<void> {
   const pending = Array.from(INDEX_CACHE_PENDING.values());
@@ -596,6 +608,32 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
     const rawPath = params.relPath.trim();
     if (!rawPath) {
       throw new Error("path required");
+    }
+    const requestedSessionPath = normalizeRequestedMemoryLikePath(rawPath);
+    if (this.sources.has("sessions") && requestedSessionPath.startsWith("sessions/")) {
+      const sessionFiles = await listSessionFilesForAgent(this.agentId);
+      const absSessionPath = sessionFiles.find(
+        (candidate) => sessionPathForFile(candidate) === requestedSessionPath,
+      );
+      if (!absSessionPath) {
+        return { text: "", path: requestedSessionPath };
+      }
+      const entry = await buildSessionEntry(absSessionPath);
+      if (!entry) {
+        return { text: "", path: requestedSessionPath };
+      }
+      if (!params.from && !params.lines) {
+        return { text: entry.content, path: entry.path };
+      }
+      const start = Math.max(1, params.from ?? 1);
+      const count = Math.max(1, params.lines ?? entry.lineMap.length);
+      const end = start + count - 1;
+      const contentLines = entry.content.split("\n");
+      const selected = contentLines.filter((_, index) => {
+        const mappedLine = entry.lineMap[index] ?? index + 1;
+        return mappedLine >= start && mappedLine <= end;
+      });
+      return { text: selected.join("\n"), path: entry.path };
     }
     const absPath = path.isAbsolute(rawPath)
       ? path.resolve(rawPath)

@@ -2,6 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig } from "../../config/config.js";
 import { listMemoryFiles } from "../../memory/internal.js";
+import {
+  buildSessionEntry,
+  listSessionFilesForAgent,
+  sessionPathForFile,
+} from "../../memory/session-files.js";
 import type { MemorySearchResult } from "../../memory/types.js";
 import { resolveAgentWorkspaceDir } from "../agent-scope.js";
 import { resolveMemorySearchConfig } from "../memory-search.js";
@@ -29,6 +34,7 @@ const STOP_WORDS = new Set([
   "just",
 ]);
 const SNIPPET_WINDOW_LINES = 2;
+type RankedMemoryMatch = MemorySearchResult & { mtimeMs: number };
 
 function tokenizeQuery(query: string): string[] {
   const normalized = query
@@ -56,6 +62,7 @@ function scoreLine(line: string, tokens: string[], fullQuery: string): number {
 function buildSnippet(
   lines: string[],
   lineIndex: number,
+  lineMap?: number[],
 ): {
   snippet: string;
   startLine: number;
@@ -68,24 +75,36 @@ function buildSnippet(
       .slice(start, end + 1)
       .join("\n")
       .trim(),
-    startLine: start + 1,
-    endLine: end + 1,
+    startLine: lineMap?.[start] ?? start + 1,
+    endLine: lineMap?.[end] ?? end + 1,
   };
 }
 
-export async function searchLocalMemoryFiles(params: {
+function finalizeRankedMatches(
+  matches: RankedMemoryMatch[],
+  maxResults?: number,
+): MemorySearchResult[] {
+  matches.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    return b.mtimeMs - a.mtimeMs;
+  });
+  return matches.slice(0, maxResults ?? 6).map(({ mtimeMs: _mtimeMs, ...entry }) => entry);
+}
+
+async function collectLocalMemoryMatches(params: {
   workspaceDir: string;
   extraPaths?: string[];
   query: string;
-  maxResults?: number;
-}): Promise<MemorySearchResult[]> {
+}): Promise<RankedMemoryMatch[]> {
   const fullQuery = params.query.trim().toLowerCase();
   if (!fullQuery) {
     return [];
   }
   const tokens = tokenizeQuery(params.query);
   const files = await listMemoryFiles(params.workspaceDir, params.extraPaths);
-  const matches: Array<MemorySearchResult & { mtimeMs: number }> = [];
+  const matches: RankedMemoryMatch[] = [];
 
   for (const absPath of files) {
     let content: string;
@@ -119,13 +138,60 @@ export async function searchLocalMemoryFiles(params: {
     });
   }
 
-  matches.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
+  return matches;
+}
+
+async function collectLocalSessionMatches(params: {
+  agentId: string;
+  query: string;
+}): Promise<RankedMemoryMatch[]> {
+  const fullQuery = params.query.trim().toLowerCase();
+  if (!fullQuery) {
+    return [];
+  }
+  const tokens = tokenizeQuery(params.query);
+  const files = await listSessionFilesForAgent(params.agentId);
+  const matches: RankedMemoryMatch[] = [];
+
+  for (const absPath of files) {
+    const entry = await buildSessionEntry(absPath);
+    if (!entry || !entry.content.trim()) {
+      continue;
     }
-    return b.mtimeMs - a.mtimeMs;
-  });
-  return matches.slice(0, params.maxResults ?? 6).map(({ mtimeMs: _mtimeMs, ...entry }) => entry);
+    const lines = entry.content.split("\n");
+    let bestScore = 0;
+    let bestLine = -1;
+    for (let i = 0; i < lines.length; i += 1) {
+      const score = scoreLine(lines[i] ?? "", tokens, fullQuery);
+      if (score > bestScore) {
+        bestScore = score;
+        bestLine = i;
+      }
+    }
+    if (bestLine < 0 || bestScore <= 0) {
+      continue;
+    }
+    const snippet = buildSnippet(lines, bestLine, entry.lineMap);
+    matches.push({
+      path: entry.path,
+      source: "sessions",
+      score: Math.min(1.5, bestScore / Math.max(3, tokens.length + 2)),
+      mtimeMs: entry.mtimeMs,
+      ...snippet,
+    });
+  }
+
+  return matches;
+}
+
+export async function searchLocalMemoryFiles(params: {
+  workspaceDir: string;
+  extraPaths?: string[];
+  query: string;
+  maxResults?: number;
+}): Promise<MemorySearchResult[]> {
+  const matches = await collectLocalMemoryMatches(params);
+  return finalizeRankedMatches(matches, params.maxResults);
 }
 
 function resolveRequestedMemoryPath(
@@ -159,6 +225,30 @@ async function resolveAllowedLocalMemoryPath(params: {
   return requested;
 }
 
+function normalizeRequestedLocalPath(relPath: string): string {
+  return relPath
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^[./]+/, "");
+}
+
+async function resolveAllowedLocalSessionPath(params: {
+  agentId: string;
+  relPath: string;
+}): Promise<string | null> {
+  const requested = normalizeRequestedLocalPath(params.relPath);
+  if (!requested.startsWith("sessions/")) {
+    return null;
+  }
+  const files = await listSessionFilesForAgent(params.agentId);
+  for (const absPath of files) {
+    if (sessionPathForFile(absPath) === requested) {
+      return absPath;
+    }
+  }
+  return null;
+}
+
 export async function readLocalMemoryFile(params: {
   workspaceDir: string;
   extraPaths?: string[];
@@ -190,6 +280,35 @@ export async function readLocalMemoryFile(params: {
   return { text: slice.join("\n"), path: allowed.normalizedRelPath };
 }
 
+async function readLocalSessionFile(params: {
+  agentId: string;
+  relPath: string;
+  from?: number;
+  lines?: number;
+}): Promise<{ text: string; path: string }> {
+  const absPath = await resolveAllowedLocalSessionPath(params);
+  const normalizedRelPath = normalizeRequestedLocalPath(params.relPath);
+  if (!absPath) {
+    throw new Error("path required");
+  }
+  const entry = await buildSessionEntry(absPath);
+  if (!entry) {
+    return { text: "", path: normalizedRelPath };
+  }
+  if (!params.from && !params.lines) {
+    return { text: entry.content, path: entry.path };
+  }
+  const start = Math.max(1, params.from ?? 1);
+  const count = Math.max(1, params.lines ?? entry.lineMap.length);
+  const end = start + count - 1;
+  const contentLines = entry.content.split("\n");
+  const selected = contentLines.filter((_, index) => {
+    const mappedLine = entry.lineMap[index] ?? index + 1;
+    return mappedLine >= start && mappedLine <= end;
+  });
+  return { text: selected.join("\n"), path: entry.path };
+}
+
 export async function searchLocalMemoryFilesForAgent(params: {
   cfg: OpenClawConfig;
   agentId: string;
@@ -197,16 +316,26 @@ export async function searchLocalMemoryFilesForAgent(params: {
   maxResults?: number;
 }): Promise<MemorySearchResult[]> {
   const settings = resolveMemorySearchConfig(params.cfg, params.agentId);
-  if (!settings || !settings.sources.includes("memory")) {
+  if (!settings) {
     return [];
   }
   const workspaceDir = resolveAgentWorkspaceDir(params.cfg, params.agentId);
-  return await searchLocalMemoryFiles({
-    workspaceDir,
-    extraPaths: settings.extraPaths,
-    query: params.query,
-    maxResults: params.maxResults,
-  });
+  const [memoryMatches, sessionMatches] = await Promise.all([
+    settings.sources.includes("memory")
+      ? collectLocalMemoryMatches({
+          workspaceDir,
+          extraPaths: settings.extraPaths,
+          query: params.query,
+        })
+      : Promise.resolve([]),
+    settings.sources.includes("sessions")
+      ? collectLocalSessionMatches({
+          agentId: params.agentId,
+          query: params.query,
+        })
+      : Promise.resolve([]),
+  ]);
+  return finalizeRankedMatches([...memoryMatches, ...sessionMatches], params.maxResults);
 }
 
 export async function readLocalMemoryFileForAgent(params: {
@@ -217,15 +346,28 @@ export async function readLocalMemoryFileForAgent(params: {
   lines?: number;
 }): Promise<{ text: string; path: string }> {
   const settings = resolveMemorySearchConfig(params.cfg, params.agentId);
-  if (!settings || !settings.sources.includes("memory")) {
+  if (!settings) {
     throw new Error("path required");
   }
   const workspaceDir = resolveAgentWorkspaceDir(params.cfg, params.agentId);
-  return await readLocalMemoryFile({
-    workspaceDir,
-    extraPaths: settings.extraPaths,
-    relPath: params.relPath,
-    from: params.from,
-    lines: params.lines,
-  });
+  if (settings.sources.includes("memory")) {
+    try {
+      return await readLocalMemoryFile({
+        workspaceDir,
+        extraPaths: settings.extraPaths,
+        relPath: params.relPath,
+        from: params.from,
+        lines: params.lines,
+      });
+    } catch {}
+  }
+  if (settings.sources.includes("sessions")) {
+    return await readLocalSessionFile({
+      agentId: params.agentId,
+      relPath: params.relPath,
+      from: params.from,
+      lines: params.lines,
+    });
+  }
+  throw new Error("path required");
 }

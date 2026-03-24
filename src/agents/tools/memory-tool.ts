@@ -135,8 +135,7 @@ export function createMemorySearchTool(options: {
             sessionKey: options.agentSessionKey,
           });
           const status = memory.manager.status();
-          const localFallbackResults =
-            status.dirty === true || rawResults.length === 0 ? await loadLocalFallback() : [];
+          const localFallbackResults = await loadLocalFallback().catch(() => []);
           const mergedResults = mergeMemoryResults(rawResults, localFallbackResults, maxResults);
           const decorated = decorateCitations(mergedResults, includeCitations);
           const resolved = resolveMemoryBackendConfig({ cfg, agentId });
