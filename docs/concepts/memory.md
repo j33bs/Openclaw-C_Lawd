@@ -169,6 +169,11 @@ out to QMD for retrieval. Key points:
   memory tools keep working.
 - OpenClaw does not expose QMD embed batch-size tuning today; batch behavior is
   controlled by QMD itself.
+- **Local MCP bridge note**: if you run QMD behind an HTTP MCP bridge (for example
+  `qmd mcp` exposed through mcporter or a local sidecar) and add ad-hoc health
+  checks/scripts outside the runtime, prefer `http://localhost:8181/mcp` over
+  `http://127.0.0.1:8181/mcp`. On this setup, `localhost` is the safer loopback
+  target and avoids brittle assumptions baked into manual probes.
 - **First search may be slow**: QMD may download local GGUF models (reranker/query
   expansion) on the first `qmd query` run.
   - OpenClaw sets `XDG_CONFIG_HOME`/`XDG_CACHE_HOME` automatically when it runs QMD.
