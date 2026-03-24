@@ -676,6 +676,23 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("## Reactions");
     expect(prompt).toContain("Reactions are enabled for Telegram in MINIMAL mode.");
   });
+
+  it("includes flourishing response shaping guidance when configured", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      flourishingPromptConfig: {
+        enabled: true,
+        meaningDensity: { enabled: true, executionMinScore: 2 },
+        responseMode: { enabled: true, defaultMode: "agency_first", collapseFailureThreshold: 2 },
+        repairLoop: { enabled: true },
+      },
+    });
+
+    expect(prompt).toContain("## Flourishing Response Shaping");
+    expect(prompt).toContain("Meaning-density preflight");
+    expect(prompt).toContain("Agency-first mode means");
+    expect(prompt).toContain("Repair-loop hook");
+  });
 });
 
 describe("buildSubagentSystemPrompt", () => {
