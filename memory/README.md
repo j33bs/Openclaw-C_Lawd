@@ -15,6 +15,7 @@ This directory is the daily-memory home for C_Lawd.
 - `nodes/c_lawd/MEMORY.md` remains important doctrine, but updated runtimes no longer need a manual `agents.defaults.memorySearch.extraPaths` entry for it.
 - `workspace/memory/` stays in place as a compatibility layer until path-coupled modules are made movable.
 - `memory/*-daemon.log` files are runtime watcher artifacts, not durable memory; durable summaries belong in normal daily notes like `memory/YYYY-MM-DD.md`.
+- Routine watcher/verification noise (for example QMD/KB/OPENCLAW_HOME state-change bullets) should stay in `memory/*-daemon.log`, not append into tracked daily notes during normal verification/push windows.
 
 ## What Belongs Here
 
