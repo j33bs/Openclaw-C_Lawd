@@ -6,6 +6,7 @@ import {
   buildMultimodalChunkForIndexing,
   buildFileEntry,
   chunkMarkdown,
+  isMemoryPath,
   listMemoryFiles,
   normalizeExtraMemoryPaths,
   remapChunkLines,
@@ -154,6 +155,32 @@ describe("listMemoryFiles", () => {
     expect(files.some((file) => file.endsWith("diagram.png"))).toBe(true);
     expect(files.some((file) => file.endsWith("note.wav"))).toBe(true);
     expect(files.some((file) => file.endsWith("ignore.bin"))).toBe(false);
+  });
+
+  it("includes pinned node memory files without extraPaths", async () => {
+    const tmpDir = getTmpDir();
+    await fs.mkdir(path.join(tmpDir, "nodes", "c_lawd"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, "nodes", "c_lawd", "MEMORY.md"), "# Node memory");
+    await fs.writeFile(path.join(tmpDir, "nodes", "c_lawd", "IDENTITY.md"), "# Node identity");
+    await fs.writeFile(
+      path.join(tmpDir, "nodes", "c_lawd", "CONVERSATION_KERNEL.md"),
+      "# Node kernel",
+    );
+
+    const files = await listMemoryFiles(tmpDir);
+
+    expect(files.some((file) => file.endsWith("nodes/c_lawd/MEMORY.md"))).toBe(true);
+    expect(files.some((file) => file.endsWith("nodes/c_lawd/IDENTITY.md"))).toBe(true);
+    expect(files.some((file) => file.endsWith("nodes/c_lawd/CONVERSATION_KERNEL.md"))).toBe(true);
+  });
+});
+
+describe("isMemoryPath", () => {
+  it("recognizes pinned node markdown files", () => {
+    expect(isMemoryPath("nodes/c_lawd/MEMORY.md")).toBe(true);
+    expect(isMemoryPath("nodes/c_lawd/IDENTITY.md")).toBe(true);
+    expect(isMemoryPath("nodes/c_lawd/CONVERSATION_KERNEL.md")).toBe(true);
+    expect(isMemoryPath("nodes/c_lawd/README.md")).toBe(false);
   });
 });
 

@@ -8,12 +8,16 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 
 from interbeing_contract.submit_task_v0 import (
+    CANONICAL_CONTRACT_VALIDATION_MODE,
+    CANONICAL_CONTRACT_VALIDATION_SOURCE,
+    CANONICAL_SCHEMA_VALIDATION_MODE,
     DEFAULT_OPERATION,
     DEFAULT_SCHEMA_ENV_VAR,
     DEFAULT_ROOT_ENV_VAR,
     DEFAULT_SCHEMA_VERSION,
     build_submit_task_envelope,
     build_submit_task_envelope_file,
+    resolve_submit_task_validation_provenance,
     resolve_task_envelope_schema_path,
     validate_submit_task_envelope_shape,
 )
@@ -91,7 +95,16 @@ class SubmitTaskEnvelopeV0Tests(unittest.TestCase):
                 payload={"intent": "delegate"},
                 schema_path=schema_path,
             )
+            provenance = resolve_submit_task_validation_provenance(schema_path)
+            self.assertEqual(provenance.mode, CANONICAL_SCHEMA_VALIDATION_MODE)
+            self.assertEqual(provenance.source, str(schema_path.resolve()))
             self.assertEqual(validate_submit_task_envelope_shape(envelope, schema_path=schema_path), envelope)
+
+    def test_validation_provenance_defaults_to_in_repo_contract_validation(self) -> None:
+        provenance = resolve_submit_task_validation_provenance()
+        self.assertEqual(provenance.mode, CANONICAL_CONTRACT_VALIDATION_MODE)
+        self.assertEqual(provenance.source, CANONICAL_CONTRACT_VALIDATION_SOURCE)
+        self.assertIsNone(provenance.schema_path)
 
     def test_build_submit_task_envelope_has_required_v0_shape(self) -> None:
         envelope = build_submit_task_envelope(
@@ -150,7 +163,7 @@ class SubmitTaskEnvelopeV0Tests(unittest.TestCase):
                 payload={"intent": "delegate"},
             )
 
-    def test_validate_submit_task_envelope_falls_back_when_schema_missing(self) -> None:
+    def test_validate_submit_task_envelope_uses_contract_validation_when_schema_missing(self) -> None:
         missing_schema = Path("/tmp/nonexistent-task-envelope.v0.json")
         envelope = build_submit_task_envelope(
             requestor="c_lawd",
@@ -161,6 +174,9 @@ class SubmitTaskEnvelopeV0Tests(unittest.TestCase):
             payload={"intent": "delegate"},
             schema_path=missing_schema,
         )
+        provenance = resolve_submit_task_validation_provenance(missing_schema)
+        self.assertEqual(provenance.mode, CANONICAL_CONTRACT_VALIDATION_MODE)
+        self.assertEqual(provenance.source, CANONICAL_CONTRACT_VALIDATION_SOURCE)
         self.assertIsNone(resolve_task_envelope_schema_path(missing_schema))
         self.assertEqual(validate_submit_task_envelope_shape(envelope, schema_path=missing_schema), envelope)
 

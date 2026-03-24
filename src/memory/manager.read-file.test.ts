@@ -10,6 +10,8 @@ import { getRequiredMemoryIndexManager } from "./test-manager-helpers.js";
 function createMemorySearchCfg(options: {
   workspaceDir: string;
   indexPath: string;
+  sources?: Array<"memory" | "sessions">;
+  sessionMemory?: boolean;
 }): OpenClawConfig {
   return {
     agents: {
@@ -18,6 +20,11 @@ function createMemorySearchCfg(options: {
         memorySearch: {
           provider: "openai",
           model: "mock-embed",
+          sources: options.sources,
+          experimental:
+            options.sessionMemory === undefined
+              ? undefined
+              : { sessionMemory: options.sessionMemory },
           store: { path: options.indexPath, vector: { enabled: false } },
           cache: { enabled: false },
           query: { minScore: 0, hybrid: { enabled: false } },
@@ -32,13 +39,16 @@ function createMemorySearchCfg(options: {
 describe("MemoryIndexManager.readFile", () => {
   let workspaceDir: string;
   let indexPath: string;
+  let stateDir: string;
   let manager: MemoryIndexManager | null = null;
 
   beforeEach(async () => {
     resetEmbeddingMocks();
     workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-mem-read-"));
     indexPath = path.join(workspaceDir, "index.sqlite");
+    stateDir = path.join(workspaceDir, ".state");
     await fs.mkdir(path.join(workspaceDir, "memory"), { recursive: true });
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
   });
 
   afterEach(async () => {
@@ -46,6 +56,7 @@ describe("MemoryIndexManager.readFile", () => {
       await manager.close();
       manager = null;
     }
+    vi.unstubAllEnvs();
     await fs.rm(workspaceDir, { recursive: true, force: true });
   });
 
@@ -73,6 +84,21 @@ describe("MemoryIndexManager.readFile", () => {
 
     const result = await manager.readFile({ relPath, from: 2, lines: 1 });
     expect(result).toEqual({ text: "line 2", path: relPath });
+  });
+
+  it("returns content slices for pinned node memory files", async () => {
+    const relPath = "nodes/c_lawd/IDENTITY.md";
+    const absPath = path.join(workspaceDir, relPath);
+    await fs.mkdir(path.dirname(absPath), { recursive: true });
+    await fs.writeFile(absPath, ["name: c_lawd", "vibe: grounded"].join("\n"), "utf-8");
+
+    manager = await getRequiredMemoryIndexManager({
+      cfg: createMemorySearchCfg({ workspaceDir, indexPath }),
+      agentId: "main",
+    });
+
+    const result = await manager.readFile({ relPath, from: 2, lines: 1 });
+    expect(result).toEqual({ text: "vibe: grounded", path: relPath });
   });
 
   it("returns empty text when the requested slice is past EOF", async () => {
@@ -120,5 +146,70 @@ describe("MemoryIndexManager.readFile", () => {
     expect(result).toEqual({ text: "", path: relPath });
 
     readSpy.mockRestore();
+  });
+
+  it("reads session transcript slices when session memory is enabled", async () => {
+    const sessionsDir = path.join(stateDir, "agents", "main", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionsDir, "sess-1.jsonl"),
+      [
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "Remember the fallback patch" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "Patched session transcript recall" }],
+          },
+        }),
+      ].join("\n"),
+      "utf-8",
+    );
+
+    manager = await getRequiredMemoryIndexManager({
+      cfg: createMemorySearchCfg({
+        workspaceDir,
+        indexPath,
+        sources: ["memory", "sessions"],
+        sessionMemory: true,
+      }),
+      agentId: "main",
+    });
+
+    const result = await manager.readFile({
+      relPath: "sessions/sess-1.jsonl",
+      from: 2,
+      lines: 1,
+    });
+    expect(result).toEqual({
+      text: "Assistant: Patched session transcript recall",
+      path: "sessions/sess-1.jsonl",
+    });
+  });
+
+  it("rejects session transcript reads when session memory is disabled", async () => {
+    const sessionsDir = path.join(stateDir, "agents", "main", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(path.join(sessionsDir, "sess-2.jsonl"), "", "utf-8");
+
+    manager = await getRequiredMemoryIndexManager({
+      cfg: createMemorySearchCfg({
+        workspaceDir,
+        indexPath,
+        sources: ["memory"],
+        sessionMemory: false,
+      }),
+      agentId: "main",
+    });
+
+    await expect(manager.readFile({ relPath: "sessions/sess-2.jsonl" })).rejects.toThrow(
+      "path required",
+    );
   });
 });

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 from datetime import datetime, timezone
@@ -12,6 +13,9 @@ DEFAULT_OPERATION = "submit_task"
 DEFAULT_FILENAME = "task-envelope.v0.json"
 DEFAULT_SCHEMA_ENV_VAR = "OPENCLAW_INTERBEING_TASK_ENVELOPE_SCHEMA"
 DEFAULT_ROOT_ENV_VAR = "OPENCLAW_INTERBEING_ROOT"
+CANONICAL_CONTRACT_VALIDATION_MODE = "canonical_contract_validation"
+CANONICAL_SCHEMA_VALIDATION_MODE = "canonical_schema_validation"
+CANONICAL_CONTRACT_VALIDATION_SOURCE = "interbeing_contract.submit_task_v0"
 REQUIRED_STRING_FIELDS = (
     "schema_version",
     "operation",
@@ -21,6 +25,13 @@ REQUIRED_STRING_FIELDS = (
     "correlation_id",
     "created_at",
 )
+
+
+@dataclass(frozen=True)
+class ValidationProvenance:
+    mode: str
+    source: str
+    schema_path: Path | None = None
 
 
 def _utc_now() -> str:
@@ -58,15 +69,6 @@ def _validate_submit_task_envelope_practical(envelope: Mapping[str, Any]) -> dic
     return normalized
 
 
-def _default_schema_candidates() -> tuple[Path, ...]:
-    sibling_schema = _repo_root().parent / "openclaw-interbeing" / "schemas" / DEFAULT_FILENAME
-    return (
-        sibling_schema,
-        Path.home() / "src" / "openclaw-interbeing" / "schemas" / DEFAULT_FILENAME,
-        Path.home() / "src" / "Openclaw-Interbeing" / "schemas" / DEFAULT_FILENAME,
-    )
-
-
 def resolve_task_envelope_schema_path(schema_path: Path | str | None = None) -> Path | None:
     candidates: list[Path] = []
     if schema_path is not None:
@@ -80,8 +82,6 @@ def resolve_task_envelope_schema_path(schema_path: Path | str | None = None) -> 
     if env_root_path:
         candidates.append(Path(env_root_path) / "schemas" / DEFAULT_FILENAME)
 
-    candidates.extend(_default_schema_candidates())
-
     seen: set[str] = set()
     for candidate in candidates:
         key = str(candidate)
@@ -93,8 +93,25 @@ def resolve_task_envelope_schema_path(schema_path: Path | str | None = None) -> 
     return None
 
 
+def resolve_submit_task_validation_provenance(
+    schema_path: Path | str | None = None,
+) -> ValidationProvenance:
+    resolved_schema_path = resolve_task_envelope_schema_path(schema_path)
+    if resolved_schema_path is not None:
+        return ValidationProvenance(
+            mode=CANONICAL_SCHEMA_VALIDATION_MODE,
+            source=str(resolved_schema_path),
+            schema_path=resolved_schema_path,
+        )
+    return ValidationProvenance(
+        mode=CANONICAL_CONTRACT_VALIDATION_MODE,
+        source=CANONICAL_CONTRACT_VALIDATION_SOURCE,
+        schema_path=None,
+    )
+
+
 def _load_task_envelope_schema(schema_path: Path | str | None = None) -> dict[str, Any] | None:
-    resolved = resolve_task_envelope_schema_path(schema_path)
+    resolved = resolve_submit_task_validation_provenance(schema_path).schema_path
     if resolved is None:
         return None
     payload = json.loads(resolved.read_text(encoding="utf-8"))

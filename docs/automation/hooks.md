@@ -610,7 +610,7 @@ openclaw hooks enable session-memory
 
 ### bootstrap-extra-files
 
-Injects additional bootstrap files (for example monorepo-local `AGENTS.md` / `TOOLS.md`) during `agent:bootstrap`.
+Injects additional bootstrap files (for example monorepo-local `AGENTS.md`, `TOOLS.md`, or custom Markdown notes) during `agent:bootstrap`.
 
 **Events**: `agent:bootstrap`
 
@@ -628,7 +628,7 @@ Injects additional bootstrap files (for example monorepo-local `AGENTS.md` / `TO
       "entries": {
         "bootstrap-extra-files": {
           "enabled": true,
-          "paths": ["packages/*/AGENTS.md", "packages/*/TOOLS.md"]
+          "paths": ["packages/*/AGENTS.md", "packages/*/README.md"]
         }
       }
     }
@@ -640,8 +640,8 @@ Injects additional bootstrap files (for example monorepo-local `AGENTS.md` / `TO
 
 - Paths are resolved relative to workspace.
 - Files must stay inside workspace (realpath-checked).
-- Only recognized bootstrap basenames are loaded.
-- Subagent allowlist is preserved (`AGENTS.md` and `TOOLS.md` only).
+- Explicitly configured in-workspace text files are loaded. Canonical bootstrap names keep their basename; custom files are injected under their relative path.
+- Cron sessions still use the smaller bootstrap allowlist. Subagents keep the richer parent bootstrap context.
 
 **Enable**:
 

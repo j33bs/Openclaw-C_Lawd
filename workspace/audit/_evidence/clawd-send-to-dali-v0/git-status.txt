@@ -1,0 +1,12 @@
+## codex/feat/send-to-dali-v0
+ M .env.example
+ M handoff/README.md
+ M interbeing_contract/README.md
+ M scripts/dev/emit_dali_handoff.py
+ M scripts/dev/send_to_dali_v0.py
+ M scripts/dev/test_emit_dali_handoff.py
+ M scripts/dev/test_send_to_dali_v0.py
+ M workspace/audit/_evidence/clawd-send-to-dali-v0/changed-files.txt
+ M workspace/audit/_evidence/clawd-send-to-dali-v0/git-status.txt
+ M workspace/audit/_evidence/clawd-send-to-dali-v0/rollback-notes.md
+ M workspace/audit/_evidence/clawd-send-to-dali-v0/send-to-dali-smoke.md

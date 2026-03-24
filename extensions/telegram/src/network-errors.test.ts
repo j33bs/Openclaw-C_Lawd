@@ -3,6 +3,7 @@ import {
   getTelegramNetworkErrorOrigin,
   isRecoverableTelegramNetworkError,
   isSafeToRetrySendError,
+  isSingleRetrySafeTelegramSendEnvelope,
   isTelegramClientRejection,
   isTelegramPollingNetworkError,
   isTelegramServerError,
@@ -183,6 +184,38 @@ describe("isSafeToRetrySendError", () => {
     const root = Object.assign(new Error("ECONNREFUSED"), { code: "ECONNREFUSED" });
     const wrapped = Object.assign(new Error("fetch failed"), { cause: root });
     expect(isSafeToRetrySendError(wrapped)).toBe(true);
+  });
+});
+
+describe("isSingleRetrySafeTelegramSendEnvelope", () => {
+  class MockHttpError extends Error {
+    constructor(
+      message: string,
+      public readonly error: unknown,
+    ) {
+      super(message);
+      this.name = "HttpError";
+    }
+  }
+
+  it("accepts grammY failed envelopes with nested fetch-failed errors", () => {
+    const err = new MockHttpError(
+      "Network request for 'sendMessage' failed!",
+      new TypeError("fetch failed"),
+    );
+    expect(isSingleRetrySafeTelegramSendEnvelope(err)).toBe(true);
+  });
+
+  it("rejects failed-after envelopes to avoid duplicate non-idempotent sends", () => {
+    const err = new MockHttpError(
+      "Network request for 'sendMessage' failed after 1 attempts.",
+      new TypeError("fetch failed"),
+    );
+    expect(isSingleRetrySafeTelegramSendEnvelope(err)).toBe(false);
+  });
+
+  it("rejects plain fetch failures without the grammY failed envelope", () => {
+    expect(isSingleRetrySafeTelegramSendEnvelope(new TypeError("fetch failed"))).toBe(false);
   });
 });
 

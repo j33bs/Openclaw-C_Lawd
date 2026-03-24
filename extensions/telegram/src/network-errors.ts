@@ -53,6 +53,8 @@ const RECOVERABLE_ERROR_NAMES = new Set([
 ]);
 
 const ALWAYS_RECOVERABLE_MESSAGES = new Set(["fetch failed", "typeerror: fetch failed"]);
+const GRAMMY_NETWORK_REQUEST_FAILED_RE =
+  /^network request(?:\s+for\s+["']?[^"']+["']?)?\s+failed[!.]?$/i;
 const GRAMMY_NETWORK_REQUEST_FAILED_AFTER_RE =
   /^network request(?:\s+for\s+["']?[^"']+["']?)?\s+failed\s+after\b.*[!.]?$/i;
 
@@ -168,6 +170,39 @@ export function isSafeToRetrySendError(err: unknown): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Returns true for grammY/undici send envelopes that failed before a response
+ * was available, but where the exact pre-connect status is unknown. These are
+ * allowed only a single bounded retry by the send pipeline.
+ */
+export function isSingleRetrySafeTelegramSendEnvelope(err: unknown): boolean {
+  if (!err || isTelegramClientRejection(err) || isTelegramServerError(err)) {
+    return false;
+  }
+
+  let sawFetchFailed = false;
+  let sawFailedEnvelope = false;
+  let sawFailedAfterEnvelope = false;
+
+  for (const candidate of collectTelegramErrorCandidates(err)) {
+    const message = formatErrorMessage(candidate).trim().toLowerCase();
+    if (!message) {
+      continue;
+    }
+    if (ALWAYS_RECOVERABLE_MESSAGES.has(message)) {
+      sawFetchFailed = true;
+    }
+    if (GRAMMY_NETWORK_REQUEST_FAILED_RE.test(message)) {
+      sawFailedEnvelope = true;
+    }
+    if (GRAMMY_NETWORK_REQUEST_FAILED_AFTER_RE.test(message)) {
+      sawFailedAfterEnvelope = true;
+    }
+  }
+
+  return sawFetchFailed && sawFailedEnvelope && !sawFailedAfterEnvelope;
 }
 
 function hasTelegramErrorCode(err: unknown, matches: (code: number) => boolean): boolean {

@@ -26,6 +26,15 @@ const createGeminiFetchMock = () =>
     json: async () => ({ embedding: { values: [1, 2, 3] } }),
   }));
 
+const createOllamaFetchMock = () =>
+  vi.fn(
+    async (_input?: unknown, _init?: unknown) =>
+      new Response(JSON.stringify({ embedding: [1, 2, 3] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+  );
+
 function readFirstFetchRequest(fetchMock: { mock: { calls: unknown[][] } }) {
   const [url, init] = fetchMock.mock.calls[0] ?? [];
   return { url, init: init as RequestInit | undefined };
@@ -84,7 +93,7 @@ function createLocalProvider(options?: { fallback?: "none" | "openai" }) {
 
 function expectAutoSelectedProvider(
   result: Awaited<ReturnType<EmbeddingsModule["createEmbeddingProvider"]>>,
-  expectedId: "openai" | "gemini" | "mistral",
+  expectedId: "openai" | "gemini" | "mistral" | "ollama",
 ) {
   expect(result.requestedProvider).toBe("auto");
   const provider = requireProvider(result);
@@ -409,6 +418,37 @@ describe("embedding provider auto selection", () => {
       const [url] = fetchMock.mock.calls[0] ?? [];
       expect(url, testCase.name).toBe(testCase.expectedUrl);
     }
+  });
+
+  it("prefers configured ollama before remote providers in auto mode", async () => {
+    const fetchMock = createOllamaFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createEmbeddingProvider({
+      config: {
+        models: {
+          providers: {
+            ollama: {
+              baseUrl: "http://127.0.0.1:11434/v1",
+            },
+          },
+        },
+      } as never,
+      provider: "auto",
+      model: "",
+      fallback: "none",
+    });
+
+    const provider = expectAutoSelectedProvider(result, "ollama");
+    await provider.embedQuery("hello");
+
+    expect(authModule.resolveApiKeyForProvider).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:11434/api/embeddings",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
   });
 });
 

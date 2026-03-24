@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
+    from .io_utils import write_json_atomic_verified
     from .paths import (
         resolve_identity_doc_path,
         resolve_state_runtime_memory_path,
@@ -15,6 +16,7 @@ if __package__:
     from .relationship_tracker import load_state as load_relationship_state
     from .relationship_tracker import record_session_close, record_session_open
 else:  # pragma: no cover - script/local import compatibility
+    from io_utils import write_json_atomic_verified
     from paths import resolve_identity_doc_path, resolve_state_runtime_memory_path, resolve_workspace_path
     from relationship_tracker import load_state as load_relationship_state
     from relationship_tracker import record_session_close, record_session_open
@@ -146,7 +148,7 @@ def load_session_handshake(
     out_dir = _resolve_handshake_dir(root)
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact = out_dir / f"{session_id}_open.json"
-    artifact.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    write_json_atomic_verified(artifact, payload, indent=2, ensure_ascii=True)
     _emit_session_event("tacti_cr.session.handshake_loaded", payload, session_id=str(session_id))
     payload["artifact_path"] = str(artifact)
     return payload
@@ -192,7 +194,7 @@ def close_session_handshake(
     out_dir = _resolve_handshake_dir(root)
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact = out_dir / f"{session_id}_close.json"
-    artifact.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    write_json_atomic_verified(artifact, payload, indent=2, ensure_ascii=True)
     _emit_session_event("tacti_cr.session.session_closed", payload, session_id=str(session_id))
     payload["artifact_path"] = str(artifact)
     return payload

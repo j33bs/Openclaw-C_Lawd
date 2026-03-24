@@ -57,6 +57,7 @@ import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-t
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
 import { createTypingSignaler } from "./typing-mode.js";
 import type { TypingController } from "./typing.js";
+import { captureWorklogIfNeeded } from "./worklog-capture.js";
 
 const BLOCK_REPLY_SEND_TIMEOUT_MS = 15_000;
 
@@ -251,6 +252,27 @@ export async function runReplyAgent(params: {
     defaultModel,
     agentCfgContextTokens,
   });
+  const captureWorklogForTurn = async (
+    payloads: ReplyPayload[],
+    toolMetas: Array<{ toolName?: string; meta?: string }>,
+  ) => {
+    try {
+      await captureWorklogIfNeeded({
+        cfg,
+        workspaceDir: followupRun.run.workspaceDir,
+        sessionKey,
+        chatType: sessionCtx.ChatType,
+        originatingChannel: sessionCtx.OriginatingChannel,
+        messageProvider: followupRun.run.messageProvider,
+        senderIsOwner: followupRun.run.senderIsOwner,
+        promptSummary: followupRun.summaryLine ?? commandBody,
+        payloads,
+        toolMetas,
+      });
+    } catch (err) {
+      defaultRuntime.error?.(`worklog capture failed: ${String(err)}`);
+    }
+  };
 
   let responseUsageLine: string | undefined;
   type SessionResetOptions = {
@@ -482,6 +504,7 @@ export async function runReplyAgent(params: {
     // Otherwise, a late typing trigger (e.g. from a tool callback) can outlive the run and
     // keep the typing indicator stuck.
     if (payloadArray.length === 0) {
+      await captureWorklogForTurn(payloadArray, runResult.toolMetas ?? []);
       return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
     }
 
@@ -534,6 +557,8 @@ export async function runReplyAgent(params: {
       hasReminderCommitment && successfulCronAdds === 0 && !coveredByExistingCron
         ? appendUnscheduledReminderNote(replyPayloads)
         : replyPayloads;
+
+    await captureWorklogForTurn(guardedReplyPayloads, runResult.toolMetas ?? []);
 
     await signalTypingIfNeeded(guardedReplyPayloads, typingSignals);
 

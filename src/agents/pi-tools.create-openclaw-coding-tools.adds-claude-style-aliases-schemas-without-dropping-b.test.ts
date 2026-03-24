@@ -70,12 +70,12 @@ describe("createOpenClawCodingTools", () => {
     });
     expect(openAiTools.some((tool) => tool.name === "apply_patch")).toBe(true);
 
-    const anthropicTools = createOpenClawCodingTools({
+    const xaiTools = createOpenClawCodingTools({
       config: enabledConfig,
-      modelProvider: "anthropic",
-      modelId: "claude-opus-4-5",
+      modelProvider: "xai",
+      modelId: "grok-4-1-fast",
     });
-    expect(anthropicTools.some((tool) => tool.name === "apply_patch")).toBe(false);
+    expect(xaiTools.some((tool) => tool.name === "apply_patch")).toBe(true);
 
     const allowModelsConfig: OpenClawConfig = {
       tools: {
@@ -99,7 +99,9 @@ describe("createOpenClawCodingTools", () => {
     expect(denied.some((tool) => tool.name === "apply_patch")).toBe(false);
 
     const oauthTools = createOpenClawCodingTools({
-      modelProvider: "anthropic",
+      config: enabledConfig,
+      modelProvider: "xai",
+      modelId: "grok-4-1-fast",
       modelAuthMode: "oauth",
     });
     const names = new Set(oauthTools.map((tool) => tool.name));
@@ -107,7 +109,7 @@ describe("createOpenClawCodingTools", () => {
     expect(names.has("read")).toBe(true);
     expect(names.has("write")).toBe(true);
     expect(names.has("edit")).toBe(true);
-    expect(names.has("apply_patch")).toBe(false);
+    expect(names.has("apply_patch")).toBe(true);
   });
   it("provides top-level object schemas for all tools", () => {
     const tools = createOpenClawCodingTools();

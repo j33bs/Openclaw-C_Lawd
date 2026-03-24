@@ -77,15 +77,36 @@ class TacticCore:
         return self.chunker.match_shortcut(text)
     
     # === INTEGRATION ===
-    
-    def full_status(self):
-        """Get full system status."""
-        return {
+
+    def full_status(self, *, include_fitness: bool = False):
+        """Get full system status.
+
+        Parameters
+        ----------
+        include_fitness:
+            When True, also run the structural fitness assessment from
+            ``workspace/evolution/fitness.py`` and merge the result.
+            Disabled by default because it shells out to git and reads the
+            filesystem — fine for manual/heartbeat use, not every call.
+        """
+        status = {
             "relationship": self.get_relationship_health(),
             "arousal": self.get_arousal_state(),
             "patterns_found": len(self.find_patterns()),
-            "shortcuts": len(self.chunker.list_shortcuts())
+            "shortcuts": len(self.chunker.list_shortcuts()),
         }
+        if include_fitness:
+            try:
+                from pathlib import Path
+                import importlib.util
+                fitness_path = Path(__file__).parent.parent / "evolution" / "fitness.py"
+                spec = importlib.util.spec_from_file_location("fitness", fitness_path)
+                fitness_mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(fitness_mod)
+                status["fitness"] = fitness_mod.run_assessment()
+            except Exception as e:
+                status["fitness"] = {"error": str(e)}
+        return status
 
 
 # Singleton instance

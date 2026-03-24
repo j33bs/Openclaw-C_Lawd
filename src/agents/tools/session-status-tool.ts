@@ -51,6 +51,19 @@ const SessionStatusToolSchema = Type.Object({
   model: Type.Optional(Type.String()),
 });
 
+export function resolveSessionStatusToolConfig(params: {
+  liveConfig: OpenClawConfig;
+  toolConfig?: OpenClawConfig;
+  modelRaw?: string | null;
+}): OpenClawConfig {
+  // Model mutations should consult the live config so hot-reloaded aliases
+  // and allowlist changes are visible even when the tool instance was
+  // created with an older config snapshot earlier in the run.
+  return typeof params.modelRaw === "string"
+    ? params.liveConfig
+    : (params.toolConfig ?? params.liveConfig);
+}
+
 function resolveSessionEntry(params: {
   store: Record<string, SessionEntry>;
   keyRaw: string;
@@ -186,7 +199,12 @@ export function createSessionStatusTool(opts?: {
     parameters: SessionStatusToolSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
-      const cfg = opts?.config ?? loadConfig();
+      const modelRaw = readStringParam(params, "model");
+      const cfg = resolveSessionStatusToolConfig({
+        liveConfig: loadConfig(),
+        toolConfig: opts?.config,
+        modelRaw,
+      });
       const { mainKey, alias, effectiveRequesterKey } = resolveSandboxedSessionToolContext({
         cfg,
         agentSessionKey: opts?.agentSessionKey,
@@ -329,7 +347,6 @@ export function createSessionStatusTool(opts?: {
       }
 
       const configured = resolveDefaultModelForAgent({ cfg, agentId });
-      const modelRaw = readStringParam(params, "model");
       let changedModel = false;
       if (typeof modelRaw === "string") {
         const selection = await resolveModelOverride({

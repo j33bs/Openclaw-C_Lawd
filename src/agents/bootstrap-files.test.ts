@@ -65,6 +65,30 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(files.some((file) => file.path === path.join(workspaceDir, "EXTRA.md"))).toBe(true);
   });
 
+  it("drops root MEMORY.md added by hooks for non-owner sessions", async () => {
+    registerInternalHook("agent:bootstrap", (event) => {
+      const context = event.context as AgentBootstrapHookContext;
+      context.bootstrapFiles = [
+        ...context.bootstrapFiles,
+        {
+          name: "MEMORY.md",
+          path: path.join(context.workspaceDir, "MEMORY.md"),
+          content: "hook memory",
+          missing: false,
+        } as unknown as WorkspaceBootstrapFile,
+      ];
+    });
+
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    const files = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      sessionKey: "agent:main:telegram:direct:123",
+      senderIsOwner: false,
+    });
+
+    expect(files.some((file) => file.name === "MEMORY.md")).toBe(false);
+  });
+
   it("drops malformed hook files with missing/invalid paths", async () => {
     registerMalformedBootstrapFileHook();
 

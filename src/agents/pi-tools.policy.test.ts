@@ -125,12 +125,13 @@ describe("resolveSubagentToolPolicy depth awareness", () => {
     expect(isToolAllowedByPolicyName("sessions_history", policy)).toBe(true);
   });
 
-  it("depth-1 orchestrator still denies gateway, cron, memory", () => {
+  it("depth-1 orchestrator still denies gateway, cron, sessions_send, but allows memory", () => {
     const policy = resolveSubagentToolPolicy(baseCfg, 1);
     expect(isToolAllowedByPolicyName("gateway", policy)).toBe(false);
     expect(isToolAllowedByPolicyName("cron", policy)).toBe(false);
-    expect(isToolAllowedByPolicyName("memory_search", policy)).toBe(false);
-    expect(isToolAllowedByPolicyName("memory_get", policy)).toBe(false);
+    expect(isToolAllowedByPolicyName("sessions_send", policy)).toBe(false);
+    expect(isToolAllowedByPolicyName("memory_search", policy)).toBe(true);
+    expect(isToolAllowedByPolicyName("memory_get", policy)).toBe(true);
   });
 
   it("depth-2 leaf denies sessions_spawn", () => {
@@ -202,6 +203,8 @@ describe("resolveSubagentToolPolicy depth awareness", () => {
     const policy = resolveSubagentToolPolicyForSession(cfg, "agent:main:subagent:flat-leaf");
     expect(isToolAllowedByPolicyName("sessions_spawn", policy)).toBe(false);
     expect(isToolAllowedByPolicyName("subagents", policy)).toBe(false);
+    expect(isToolAllowedByPolicyName("memory_search", policy)).toBe(true);
+    expect(isToolAllowedByPolicyName("memory_get", policy)).toBe(true);
   });
 
   it("defaults to leaf behavior when no depth is provided", () => {

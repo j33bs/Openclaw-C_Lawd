@@ -396,6 +396,8 @@ export type MemorySearchConfig = {
     onSearch?: boolean;
     watch?: boolean;
     watchDebounceMs?: number;
+    /** Minimum macOS system idle time before auto-sync reasons may index (default: 0/off). */
+    idleSeconds?: number;
     intervalMinutes?: number;
     sessions?: {
       /** Minimum appended bytes before session transcripts are reindexed. */

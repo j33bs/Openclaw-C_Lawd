@@ -39,9 +39,7 @@ export type EmbeddingProviderId = "openai" | "local" | "gemini" | "voyage" | "mi
 export type EmbeddingProviderRequest = EmbeddingProviderId | "auto";
 export type EmbeddingProviderFallback = EmbeddingProviderId | "none";
 
-// Remote providers considered for auto-selection when provider === "auto".
-// Ollama is intentionally excluded here so that "auto" mode does not
-// implicitly assume a local Ollama instance is available.
+// Remote providers considered for auto-selection after local/self-hosted options.
 const REMOTE_EMBEDDING_PROVIDER_IDS = ["openai", "gemini", "voyage", "mistral"] as const;
 
 export type EmbeddingProviderResult = {
@@ -95,6 +93,10 @@ function canAutoSelectLocal(options: EmbeddingProviderOptions): boolean {
   } catch {
     return false;
   }
+}
+
+function canAutoSelectOllama(options: EmbeddingProviderOptions): boolean {
+  return Boolean(options.config.models?.providers?.ollama);
 }
 
 function isMissingApiKeyError(err: unknown): boolean {
@@ -202,6 +204,7 @@ export async function createEmbeddingProvider(
   if (requestedProvider === "auto") {
     const missingKeyErrors: string[] = [];
     let localError: string | null = null;
+    let ollamaError: string | null = null;
 
     if (canAutoSelectLocal(options)) {
       try {
@@ -209,6 +212,15 @@ export async function createEmbeddingProvider(
         return { ...local, requestedProvider };
       } catch (err) {
         localError = formatLocalSetupError(err);
+      }
+    }
+
+    if (canAutoSelectOllama(options)) {
+      try {
+        const ollama = await createProvider("ollama");
+        return { ...ollama, requestedProvider };
+      } catch (err) {
+        ollamaError = formatPrimaryError(err, "ollama");
       }
     }
 
@@ -230,7 +242,7 @@ export async function createEmbeddingProvider(
     }
 
     // All providers failed due to missing API keys - return null provider for FTS-only mode
-    const details = [...missingKeyErrors, localError].filter(Boolean) as string[];
+    const details = [...missingKeyErrors, localError, ollamaError].filter(Boolean) as string[];
     const reason = details.length > 0 ? details.join("\n\n") : "No embeddings provider available.";
     return {
       provider: null,
@@ -315,6 +327,7 @@ function formatLocalSetupError(err: unknown): string {
       ? "2) Reinstall OpenClaw (this should install node-llama-cpp): npm i -g openclaw@latest"
       : null,
     "3) If you use pnpm: pnpm approve-builds (select node-llama-cpp), then pnpm rebuild node-llama-cpp",
+    'Or set agents.defaults.memorySearch.provider = "ollama" (local/self-hosted).',
     ...REMOTE_EMBEDDING_PROVIDER_IDS.map(
       (provider) => `Or set agents.defaults.memorySearch.provider = "${provider}" (remote).`,
     ),

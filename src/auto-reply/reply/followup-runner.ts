@@ -33,6 +33,7 @@ import { isRoutableChannel, routeReply } from "./route-reply.js";
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
 import { createTypingSignaler } from "./typing-mode.js";
 import type { TypingController } from "./typing.js";
+import { captureWorklogIfNeeded } from "./worklog-capture.js";
 
 export function createFollowupRunner(params: {
   opts?: GetReplyOptions;
@@ -61,6 +62,28 @@ export function createFollowupRunner(params: {
     mode: typingMode,
     isHeartbeat: opts?.isHeartbeat === true,
   });
+  const captureWorklogForTurn = async (
+    payloads: ReplyPayload[],
+    queued: FollowupRun,
+    toolMetas: Array<{ toolName?: string; meta?: string }>,
+  ) => {
+    try {
+      await captureWorklogIfNeeded({
+        cfg: queued.run.config,
+        workspaceDir: queued.run.workspaceDir,
+        sessionKey: queued.run.sessionKey,
+        chatType: queued.originatingChatType,
+        originatingChannel: queued.originatingChannel,
+        messageProvider: queued.run.messageProvider,
+        senderIsOwner: queued.run.senderIsOwner,
+        promptSummary: queued.summaryLine ?? queued.prompt,
+        payloads,
+        toolMetas,
+      });
+    } catch (err) {
+      defaultRuntime.error?.(`followup worklog capture failed: ${String(err)}`);
+    }
+  };
 
   /**
    * Sends followup payloads, routing to the originating channel if set.
@@ -337,8 +360,11 @@ export function createFollowupRunner(params: {
       const finalPayloads = suppressMessagingToolReplies ? [] : mediaFilteredPayloads;
 
       if (finalPayloads.length === 0) {
+        await captureWorklogForTurn(finalPayloads, queued, runResult.toolMetas ?? []);
         return;
       }
+
+      await captureWorklogForTurn(finalPayloads, queued, runResult.toolMetas ?? []);
 
       if (autoCompactionCount > 0) {
         const count = await incrementRunCompactionCount({

@@ -36,6 +36,20 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
         self.assertEqual(outgoing_path, repo_root / "handoff" / "outgoing" / "dali" / expected_name)
         self.assertEqual(archive_path, repo_root / "handoff" / "archive" / "dali" / expected_name)
 
+    def test_resolve_handoff_paths_supports_explicit_output_dir(self) -> None:
+        repo_root = Path("/tmp/clawd-repo")
+        output_dir = repo_root / "custom" / "outgoing"
+        outgoing_path, archive_path = EMIT_DALI_HANDOFF.resolve_handoff_paths(
+            repo_root=repo_root,
+            target_node="dali",
+            task_id="task-123",
+            created_at="2026-03-18T01:02:03Z",
+            output_dir=output_dir,
+        )
+        expected_name = "2026-03-18T01-02-03Z--task-123.task-envelope.v0.json"
+        self.assertEqual(outgoing_path, output_dir / expected_name)
+        self.assertEqual(archive_path, repo_root / "handoff" / "archive" / "dali" / expected_name)
+
     def test_emit_dali_handoff_writes_outgoing_and_archive(self) -> None:
         with TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir)
@@ -61,7 +75,49 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
             self.assertEqual(payload["payload"]["title"], "Workflow smoke")
             self.assertEqual(payload["payload"]["instructions"], "Write both outgoing and archive copies.")
             self.assertEqual(payload["payload"]["source"], "unit-test")
-            self.assertEqual(result["validation_mode"], "fallback_practical_validation")
+            self.assertEqual(result["validation_mode"], "canonical_contract_validation")
+            self.assertEqual(result["validation_source"], "interbeing_contract.submit_task_v0")
+            self.assertNotIn("local_dispatch", payload["payload"])
+
+    def test_emit_dali_handoff_preserves_adapter_local_dispatch_payload(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            result = EMIT_DALI_HANDOFF.emit_dali_handoff(
+                title="Workflow smoke",
+                instructions="Write outgoing with local dispatch metadata.",
+                requestor="c_lawd",
+                target_node="dali",
+                extra_payload={
+                    "local_dispatch": {
+                        "source_role": "planner",
+                        "target_role": "executor",
+                        "chain_id": "chain-xyz",
+                        "task_contract": {
+                            "task_class": "executor_work",
+                            "acceptance_criteria": ["produce summary"],
+                            "worker_limit": 1,
+                        },
+                    }
+                },
+                task_id="task-emit-local-dispatch",
+                correlation_id="corr-emit-local-dispatch",
+                created_at="2026-03-18T01:02:03Z",
+                repo_root=repo_root,
+            )
+            payload = json.loads(result["outgoing_path"].read_text(encoding="utf-8"))
+            self.assertEqual(
+                payload["payload"]["local_dispatch"],
+                {
+                    "source_role": "planner",
+                    "target_role": "executor",
+                    "chain_id": "chain-xyz",
+                    "task_contract": {
+                        "task_class": "executor_work",
+                        "acceptance_criteria": ["produce summary"],
+                        "worker_limit": 1,
+                    },
+                },
+            )
 
     def test_emit_dali_handoff_refuses_overwrite_by_default(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -114,6 +170,7 @@ class EmitDaliHandoffWorkflowTests(unittest.TestCase):
             self.assertEqual(payload["task_id"], "task-cli-123")
             self.assertIn("outgoing_path=", completed.stdout)
             self.assertIn("validation_mode=", completed.stdout)
+            self.assertIn("validation_source=", completed.stdout)
 
 
 if __name__ == "__main__":

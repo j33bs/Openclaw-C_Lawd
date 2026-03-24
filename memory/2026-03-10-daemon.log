@@ -1,1 +1,0 @@
-# Daemon Health Log for 2026-03-10\n\nStarted: 2026-03-10\n\n## Issues\n- QMD MCP daemon down on port 8181 (persistent).\n- ain-phi service operational on z490 port 18991.\n\n## Checks\n- KB sync: Fresh as of 10:30.\n- Other daemons: Check LaunchAgents.\n\nEnd of log.

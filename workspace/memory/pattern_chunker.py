@@ -10,8 +10,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 if __package__:
+    from .io_utils import write_json_atomic_verified
     from .paths import resolve_memory_archive_path, resolve_workspace_memory_path
 else:  # pragma: no cover - script/local import compatibility
+    from io_utils import write_json_atomic_verified
     from paths import resolve_memory_archive_path, resolve_workspace_memory_path
 
 class PatternChunker:
@@ -24,13 +26,12 @@ class PatternChunker:
     
     def _load_shortcuts(self):
         if self.shortcuts_path.exists():
-            with open(self.shortcuts_path) as f:
+            with open(self.shortcuts_path, encoding="utf-8") as f:
                 return json.load(f)
         return {"shortcuts": []}
     
     def _save_shortcuts(self):
-        with open(self.shortcuts_path, 'w') as f:
-            json.dump(self.shortcuts, f, indent=2)
+        write_json_atomic_verified(self.shortcuts_path, self.shortcuts, indent=2, ensure_ascii=True)
     
     def _extract_template(self, text):
         """Extract a template by replacing specific values with placeholders."""
@@ -54,7 +55,7 @@ class PatternChunker:
             memory_file = self.memory_dir / f"{date_str}.md"
             
             if memory_file.exists():
-                with open(memory_file) as f:
+                with open(memory_file, encoding="utf-8") as f:
                     content = f.read()
                 
                 # Extract user requests (simple heuristic)

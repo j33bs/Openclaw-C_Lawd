@@ -5,6 +5,10 @@ const childProcessMocks = vi.hoisted(() => ({
   execFileSync: vi.fn(),
 }));
 
+const openclawRootMocks = vi.hoisted(() => ({
+  resolveOpenClawPackageRootSync: vi.fn(),
+}));
+
 const fsMocks = vi.hoisted(() => ({
   access: vi.fn(),
   realpath: vi.fn(),
@@ -20,6 +24,10 @@ vi.mock("node:child_process", () => ({
   execFileSync: childProcessMocks.execFileSync,
 }));
 
+vi.mock("../infra/openclaw-root.js", () => ({
+  resolveOpenClawPackageRootSync: openclawRootMocks.resolveOpenClawPackageRootSync,
+}));
+
 import { resolveGatewayProgramArguments } from "./program-args.js";
 
 const originalArgv = [...process.argv];
@@ -27,6 +35,7 @@ const originalArgv = [...process.argv];
 afterEach(() => {
   process.argv = [...originalArgv];
   vi.resetAllMocks();
+  openclawRootMocks.resolveOpenClawPackageRootSync.mockReturnValue(null);
 });
 
 describe("resolveGatewayProgramArguments", () => {
@@ -71,6 +80,32 @@ describe("resolveGatewayProgramArguments", () => {
     // Should use the symlinked path, not the realpath-resolved versioned path
     expect(result.programArguments[1]).toBe(symlinkPath);
     expect(result.programArguments[1]).not.toContain("@2026.1.21-2");
+  });
+
+  it("prefers the current package root dist entry over a stale global argv1 path", async () => {
+    const globalEntry = path.resolve(
+      "/Users/test/.npm-global/lib/node_modules/openclaw/dist/entry.js",
+    );
+    const repoRoot = path.resolve("/Users/test/src/openclaw");
+    const repoEntry = path.join(repoRoot, "dist", "entry.js");
+    process.argv = ["node", globalEntry];
+    openclawRootMocks.resolveOpenClawPackageRootSync.mockReturnValue(repoRoot);
+    fsMocks.access.mockImplementation(async (target: string) => {
+      if (target === repoEntry) {
+        return;
+      }
+      throw new Error("missing");
+    });
+
+    const result = await resolveGatewayProgramArguments({ port: 18789, runtime: "node" });
+
+    expect(result.programArguments).toEqual([
+      process.execPath,
+      repoEntry,
+      "gateway",
+      "--port",
+      "18789",
+    ]);
   });
 
   it("falls back to node_modules package dist when .bin path is not resolved", async () => {

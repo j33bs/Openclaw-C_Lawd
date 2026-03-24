@@ -8,6 +8,8 @@ import { resolveAgentDir } from "../agents/agent-scope.js";
 import { ResolvedMemorySearchConfig } from "../agents/memory-search.js";
 import { type OpenClawConfig } from "../config/config.js";
 import { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
+import { withFileLock } from "../infra/file-lock.js";
+import { getSystemIdleMs } from "../infra/system-idle.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { resolveUserPath } from "../utils.js";
@@ -74,8 +76,19 @@ const VECTOR_TABLE = "chunks_vec";
 const FTS_TABLE = "chunks_fts";
 const EMBEDDING_CACHE_TABLE = "embedding_cache";
 const SESSION_DIRTY_DEBOUNCE_MS = 5000;
+const IDLE_SYNC_RECHECK_MS = 30_000;
 const SESSION_DELTA_READ_CHUNK_BYTES = 64 * 1024;
 const VECTOR_LOAD_TIMEOUT_MS = 30_000;
+const MEMORY_REINDEX_LOCK_OPTIONS = {
+  retries: {
+    retries: 120,
+    factor: 1.15,
+    minTimeout: 250,
+    maxTimeout: 2_000,
+    randomize: true,
+  },
+  stale: 30 * 60_000,
+} as const;
 const IGNORED_MEMORY_WATCH_DIR_NAMES = new Set([
   ".git",
   "node_modules",
@@ -87,6 +100,13 @@ const IGNORED_MEMORY_WATCH_DIR_NAMES = new Set([
 ]);
 
 const log = createSubsystemLogger("memory");
+const AUTO_IDLE_GATED_SYNC_REASONS = new Set([
+  "interval",
+  "search",
+  "session-delta",
+  "session-start",
+  "watch",
+]);
 
 function shouldIgnoreMemoryWatchPath(watchPath: string): boolean {
   const normalized = path.normalize(watchPath);
@@ -130,6 +150,7 @@ export abstract class MemoryManagerSyncOps {
   protected vectorReady: Promise<boolean> | null = null;
   protected watcher: FSWatcher | null = null;
   protected watchTimer: NodeJS.Timeout | null = null;
+  protected idleSyncTimer: NodeJS.Timeout | null = null;
   protected sessionWatchTimer: NodeJS.Timeout | null = null;
   protected sessionUnsubscribe: (() => void) | null = null;
   protected fallbackReason?: string;
@@ -670,6 +691,51 @@ export abstract class MemoryManagerSyncOps {
     }, this.settings.sync.watchDebounceMs);
   }
 
+  private clearIdleSyncTimer(): void {
+    if (!this.idleSyncTimer) {
+      return;
+    }
+    clearTimeout(this.idleSyncTimer);
+    this.idleSyncTimer = null;
+  }
+
+  private scheduleIdleDeferredSync(reason?: string): void {
+    if (this.closed || this.idleSyncTimer) {
+      return;
+    }
+    this.idleSyncTimer = setTimeout(() => {
+      this.idleSyncTimer = null;
+      void this.sync({ reason: reason ?? "watch" }).catch((err) => {
+        log.warn(`memory sync failed (idle-deferred): ${String(err)}`);
+      });
+    }, IDLE_SYNC_RECHECK_MS);
+  }
+
+  private async shouldDeferSyncUntilIdle(params?: {
+    reason?: string;
+    force?: boolean;
+    sessionFiles?: string[];
+  }): Promise<boolean> {
+    const idleSeconds = this.settings.sync.idleSeconds;
+    if (
+      idleSeconds <= 0 ||
+      params?.force ||
+      params?.sessionFiles?.some((sessionFile) => sessionFile.trim().length > 0)
+    ) {
+      return false;
+    }
+    const reason = params?.reason?.trim() ?? "";
+    if (!AUTO_IDLE_GATED_SYNC_REASONS.has(reason)) {
+      return false;
+    }
+    const idleMs = await getSystemIdleMs();
+    if (idleMs === null || idleMs >= idleSeconds * 1000) {
+      return false;
+    }
+    this.scheduleIdleDeferredSync(reason);
+    return true;
+  }
+
   private shouldSyncSessions(
     params?: { reason?: string; force?: boolean; sessionFiles?: string[] },
     needsFullReindex = false,
@@ -938,6 +1004,10 @@ export abstract class MemoryManagerSyncOps {
     sessionFiles?: string[];
     progress?: (update: MemorySyncProgressUpdate) => void;
   }) {
+    if (await this.shouldDeferSyncUntilIdle(params)) {
+      return;
+    }
+    this.clearIdleSyncTimer();
     const progress = params?.progress ? this.createSyncProgress(params.progress) : undefined;
     if (progress) {
       progress.report({
@@ -1148,108 +1218,110 @@ export abstract class MemoryManagerSyncOps {
     progress?: MemorySyncProgressState;
   }): Promise<void> {
     const dbPath = resolveUserPath(this.settings.store.path);
-    const tempDbPath = `${dbPath}.tmp-${randomUUID()}`;
-    const tempDb = this.openDatabaseAtPath(tempDbPath);
+    await withFileLock(dbPath, MEMORY_REINDEX_LOCK_OPTIONS, async () => {
+      const tempDbPath = `${dbPath}.tmp-${randomUUID()}`;
+      const tempDb = this.openDatabaseAtPath(tempDbPath);
 
-    const originalDb = this.db;
-    let originalDbClosed = false;
-    const originalState = {
-      ftsAvailable: this.fts.available,
-      ftsError: this.fts.loadError,
-      vectorAvailable: this.vector.available,
-      vectorLoadError: this.vector.loadError,
-      vectorDims: this.vector.dims,
-      vectorReady: this.vectorReady,
-    };
-
-    const restoreOriginalState = () => {
-      if (originalDbClosed) {
-        this.db = this.openDatabaseAtPath(dbPath);
-      } else {
-        this.db = originalDb;
-      }
-      this.fts.available = originalState.ftsAvailable;
-      this.fts.loadError = originalState.ftsError;
-      this.vector.available = originalDbClosed ? null : originalState.vectorAvailable;
-      this.vector.loadError = originalState.vectorLoadError;
-      this.vector.dims = originalState.vectorDims;
-      this.vectorReady = originalDbClosed ? null : originalState.vectorReady;
-    };
-
-    this.db = tempDb;
-    this.vectorReady = null;
-    this.vector.available = null;
-    this.vector.loadError = undefined;
-    this.vector.dims = undefined;
-    this.fts.available = false;
-    this.fts.loadError = undefined;
-    this.ensureSchema();
-
-    let nextMeta: MemoryIndexMeta | null = null;
-
-    try {
-      this.seedEmbeddingCache(originalDb);
-      const shouldSyncMemory = this.sources.has("memory");
-      const shouldSyncSessions = this.shouldSyncSessions(
-        { reason: params.reason, force: params.force },
-        true,
-      );
-
-      if (shouldSyncMemory) {
-        await this.syncMemoryFiles({ needsFullReindex: true, progress: params.progress });
-        this.dirty = false;
-      }
-
-      if (shouldSyncSessions) {
-        await this.syncSessionFiles({ needsFullReindex: true, progress: params.progress });
-        this.sessionsDirty = false;
-        this.sessionsDirtyFiles.clear();
-      } else if (this.sessionsDirtyFiles.size > 0) {
-        this.sessionsDirty = true;
-      } else {
-        this.sessionsDirty = false;
-      }
-
-      nextMeta = {
-        model: this.provider?.model ?? "fts-only",
-        provider: this.provider?.id ?? "none",
-        providerKey: this.providerKey!,
-        sources: this.resolveConfiguredSourcesForMeta(),
-        scopeHash: this.resolveConfiguredScopeHash(),
-        chunkTokens: this.settings.chunking.tokens,
-        chunkOverlap: this.settings.chunking.overlap,
+      const originalDb = this.db;
+      let originalDbClosed = false;
+      const originalState = {
+        ftsAvailable: this.fts.available,
+        ftsError: this.fts.loadError,
+        vectorAvailable: this.vector.available,
+        vectorLoadError: this.vector.loadError,
+        vectorDims: this.vector.dims,
+        vectorReady: this.vectorReady,
       };
-      if (!nextMeta) {
-        throw new Error("Failed to compute memory index metadata for reindexing.");
-      }
 
-      if (this.vector.available && this.vector.dims) {
-        nextMeta.vectorDims = this.vector.dims;
-      }
+      const restoreOriginalState = () => {
+        if (originalDbClosed) {
+          this.db = this.openDatabaseAtPath(dbPath);
+        } else {
+          this.db = originalDb;
+        }
+        this.fts.available = originalState.ftsAvailable;
+        this.fts.loadError = originalState.ftsError;
+        this.vector.available = originalDbClosed ? null : originalState.vectorAvailable;
+        this.vector.loadError = originalState.vectorLoadError;
+        this.vector.dims = originalState.vectorDims;
+        this.vectorReady = originalDbClosed ? null : originalState.vectorReady;
+      };
 
-      this.writeMeta(nextMeta);
-      this.pruneEmbeddingCacheIfNeeded?.();
-
-      this.db.close();
-      originalDb.close();
-      originalDbClosed = true;
-
-      await this.swapIndexFiles(dbPath, tempDbPath);
-
-      this.db = this.openDatabaseAtPath(dbPath);
+      this.db = tempDb;
       this.vectorReady = null;
       this.vector.available = null;
       this.vector.loadError = undefined;
+      this.vector.dims = undefined;
+      this.fts.available = false;
+      this.fts.loadError = undefined;
       this.ensureSchema();
-      this.vector.dims = nextMeta?.vectorDims;
-    } catch (err) {
+
+      let nextMeta: MemoryIndexMeta | null = null;
+
       try {
+        this.seedEmbeddingCache(originalDb);
+        const shouldSyncMemory = this.sources.has("memory");
+        const shouldSyncSessions = this.shouldSyncSessions(
+          { reason: params.reason, force: params.force },
+          true,
+        );
+
+        if (shouldSyncMemory) {
+          await this.syncMemoryFiles({ needsFullReindex: true, progress: params.progress });
+          this.dirty = false;
+        }
+
+        if (shouldSyncSessions) {
+          await this.syncSessionFiles({ needsFullReindex: true, progress: params.progress });
+          this.sessionsDirty = false;
+          this.sessionsDirtyFiles.clear();
+        } else if (this.sessionsDirtyFiles.size > 0) {
+          this.sessionsDirty = true;
+        } else {
+          this.sessionsDirty = false;
+        }
+
+        nextMeta = {
+          model: this.provider?.model ?? "fts-only",
+          provider: this.provider?.id ?? "none",
+          providerKey: this.providerKey!,
+          sources: this.resolveConfiguredSourcesForMeta(),
+          scopeHash: this.resolveConfiguredScopeHash(),
+          chunkTokens: this.settings.chunking.tokens,
+          chunkOverlap: this.settings.chunking.overlap,
+        };
+        if (!nextMeta) {
+          throw new Error("Failed to compute memory index metadata for reindexing.");
+        }
+
+        if (this.vector.available && this.vector.dims) {
+          nextMeta.vectorDims = this.vector.dims;
+        }
+
+        this.writeMeta(nextMeta);
+        this.pruneEmbeddingCacheIfNeeded?.();
+
         this.db.close();
-      } catch {}
-      await this.removeIndexFiles(tempDbPath);
-      restoreOriginalState();
-      throw err;
-    }
+        originalDb.close();
+        originalDbClosed = true;
+
+        await this.swapIndexFiles(dbPath, tempDbPath);
+
+        this.db = this.openDatabaseAtPath(dbPath);
+        this.vectorReady = null;
+        this.vector.available = null;
+        this.vector.loadError = undefined;
+        this.ensureSchema();
+        this.vector.dims = nextMeta?.vectorDims;
+      } catch (err) {
+        try {
+          this.db.close();
+        } catch {}
+        await this.removeIndexFiles(tempDbPath);
+        restoreOriginalState();
+        throw err;
+      }
+    });
   }
 
   private async runUnsafeReindex(params: {

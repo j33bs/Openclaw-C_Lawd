@@ -100,9 +100,11 @@ USER.md
 /local/
 package-lock.json
 .claude/
+.openclaw/
 .agents/
 .agents
 .agent/
+workspace/state/
 skills-lock.json
 
 # Local iOS signing overrides
@@ -146,3 +148,14 @@ docs/superpowers
 !memory/
 !memory/**
 !nodes/c_lawd/**
+
+# Local daemon/sync runtime artifacts (keep daily notes, ignore ephemeral state)
+.state/slm-daemon-watcher.state
+handoff/processed/
+memory/*-daemon.log
+memory/.daemon-last-state
+memory/.daemon-state.json
+memory/.daemon-watcher-state.json
+memory/daemon-watcher-state.json
+workspace/knowledge_base/data/last_sync.txt
+workspace/knowledge_base/data/kb.sqlite3

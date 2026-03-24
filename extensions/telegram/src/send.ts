@@ -30,6 +30,7 @@ import { renderTelegramHtmlText, splitTelegramHtmlChunks } from "./format.js";
 import {
   isRecoverableTelegramNetworkError,
   isSafeToRetrySendError,
+  isSingleRetrySafeTelegramSendEnvelope,
   isTelegramServerError,
 } from "./network-errors.js";
 import { makeProxyFetch } from "./proxy.js";
@@ -557,7 +558,8 @@ function createTelegramNonIdempotentRequestWithDiag(params: {
     retry: params.retry,
     verbose: params.verbose,
     useApiErrorLogging: params.useApiErrorLogging,
-    shouldRetry: (err) => isSafeToRetrySendError(err),
+    shouldRetry: (err, attempt) =>
+      isSafeToRetrySendError(err) || (attempt === 1 && isSingleRetrySafeTelegramSendEnvelope(err)),
     strictShouldRetry: true,
   });
 }

@@ -1,5 +1,9 @@
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { getHealthSnapshot, type HealthSummary } from "../../commands/health.js";
+import {
+  getHealthSnapshot,
+  type HealthRuntimeSnapshot,
+  type HealthSummary,
+} from "../../commands/health.js";
 import { STATE_DIR, createConfigIO, loadConfig } from "../../config/config.js";
 import { resolveMainSessionKey } from "../../config/sessions.js";
 import { listSystemPresence } from "../../infra/system-presence.js";
@@ -67,10 +71,16 @@ export function setBroadcastHealthUpdate(fn: ((snap: HealthSummary) => void) | n
   broadcastHealthUpdate = fn;
 }
 
-export async function refreshGatewayHealthSnapshot(opts?: { probe?: boolean }) {
+export async function refreshGatewayHealthSnapshot(opts?: {
+  probe?: boolean;
+  runtimeSnapshot?: HealthRuntimeSnapshot;
+}) {
   if (!healthRefresh) {
     healthRefresh = (async () => {
-      const snap = await getHealthSnapshot({ probe: opts?.probe });
+      const snap = await getHealthSnapshot({
+        probe: opts?.probe,
+        ...(opts?.runtimeSnapshot ? { runtimeSnapshot: opts.runtimeSnapshot } : {}),
+      });
       healthCache = snap;
       healthVersion += 1;
       if (broadcastHealthUpdate) {
