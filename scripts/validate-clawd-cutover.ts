@@ -82,6 +82,7 @@ const checks: CheckResult[] = [
     "workspace/research/IMPLEMENTATION_ROADMAP.md",
     "workspace/evolution/kb_status.py",
     "workspace/knowledge_base/refresh_seed.py",
+    "workspace/knowledge_base/kb.py",
     "workspace/knowledge_base/data/entities.jsonl",
     "profile/user_memory.jsonl",
   ].map(checkExists),
@@ -96,13 +97,13 @@ const checks: CheckResult[] = [
   ),
   checkContains(
     "workspace/knowledge_base/README.md",
-    "compatibility seed only",
-    "kb-readme-documents-seed-only-status",
+    "local Ollama embeddings plus a rebuildable sqlite vector store",
+    "kb-readme-documents-local-backend-status",
   ),
   checkContains(
     "workspace/knowledge_base/README.md",
-    "refresh_seed.py",
-    "kb-readme-documents-refresh-command",
+    "kb.py sync",
+    "kb-readme-documents-sync-command",
   ),
   checkContains(".env.example", "OPENCLAW_INTERBEING_DALI_REMOTE_HOST", "env-documents-dali-host"),
   checkContains(

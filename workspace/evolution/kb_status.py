@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report knowledge-base and MLX pipeline status."""
+"""Report local knowledge-base backend status."""
 from __future__ import annotations
 
 import argparse
@@ -26,16 +26,24 @@ def _print_human(report: dict) -> None:
         f"last_sync: raw={last_sync['raw']!r} timestamp={last_sync['timestamp']} "
         f"age_days={last_sync['age_days']}"
     )
-    mlx = report["mlx_pipeline"]
-    print(f"MLX files present: {len(mlx['present_files'])}/{len(mlx['expected_files'])}")
-    if mlx["missing_files"]:
-        print("missing MLX files:")
-        for path in mlx["missing_files"]:
+    backend = report["backend_files"]
+    print(
+        f"backend files present: {len(backend['present_files'])}/{len(backend['expected_files'])}"
+    )
+    if backend["missing_files"]:
+        print("missing backend files:")
+        for path in backend["missing_files"]:
             print(f"  - {path}")
-    runtime = report["mlx_runtime"]
-    print(f"MLX runtime: {runtime['status']}")
-    if runtime.get("python"):
-        print(f"  python: {runtime['python']}")
+    runtime = report["embedding_runtime"]
+    print(
+        f"embedding runtime: {runtime['status']} model={runtime['model']} "
+        f"base_url={runtime['base_url']}"
+    )
+    store = report["vector_store"]
+    print(
+        f"vector store: {store['status']} path={store['path']} "
+        f"documents={store['document_count']} chunks={store['chunk_count']}"
+    )
     if report["warnings"]:
         print("warnings:")
         for warning in report["warnings"]:
@@ -44,7 +52,7 @@ def _print_human(report: dict) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Report knowledge-base and MLX pipeline status")
+    parser = argparse.ArgumentParser(description="Report local knowledge-base backend status")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output")
     args = parser.parse_args()
 

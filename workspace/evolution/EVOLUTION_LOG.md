@@ -19,6 +19,14 @@ _A record of how the system changes over time: what changed, why, and what was l
 
 ## Log
 
+### 2026-03-24 — [kb-backend] Added a real local KB backend with Ollama embeddings and sqlite storage
+
+**Proposal:** spontaneous
+**Changed:** Added `workspace/knowledge_base/chunking.py`, `embeddings/driver_ollama.py`, `indexer.py`, `retrieval.py`, `vector_store.py`, `vector_store_lancedb.py`, and `kb.py` so the repo-local knowledge base can sync and search through a real local Ollama + sqlite backend. Updated KB health/reporting/docs to treat that backend as the live path, added focused unit coverage, and marked `data/kb.sqlite3` as a local rebuildable artifact instead of tracked source.
+**Why it mattered:** The earlier work made the KB honest, but still weak. The repo could say “seed-only” correctly and refresh the compatibility corpus, yet there was still no real local vector backend behind it. That left recall infrastructure structurally better described than implemented.
+**Outcome:** `python3 workspace/knowledge_base/kb.py sync --json` now builds a real local backend and `kb.py search` returns results from it. `kb_status.py`, `memory_status.py`, `memory_audit.py`, and `fitness.py` can now distinguish between a maintained local backend and a bare seed corpus.
+**Lesson:** Once diagnostics stop lying, the next leverage point is a small real backend, not more prose about the missing one. Honest observability should lead directly to the smallest viable implementation that makes the warnings false.
+
 ### 2026-03-24 — [kb-runtime] Added a local KB compatibility refresh path and runtime gate
 
 **Proposal:** spontaneous

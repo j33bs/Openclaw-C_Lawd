@@ -140,6 +140,9 @@ python workspace/research/research_ingest.py search <query>
 
 # Knowledge Base
 python workspace/knowledge_base/refresh_seed.py --json
+python workspace/knowledge_base/kb.py sync --json
+python workspace/knowledge_base/kb.py search "query" --json
+python workspace/knowledge_base/kb.py status --json
 python workspace/evolution/kb_status.py
 
 # Time Management

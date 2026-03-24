@@ -294,12 +294,12 @@ def _traffic_light(report: dict) -> list[str]:
     else:
         lines.append("🟢 memory freshness: all tracked stores are within freshness targets")
 
-    # Knowledge base / MLX status
+    # Knowledge base backend status
     kb = report.get("knowledge_base", {})
     kb_status = kb.get("status")
     kb_warnings = kb.get("warnings", [])
     if kb_status == "healthy":
-        lines.append("🟢 knowledge base: KB scaffold and MLX runtime look ready")
+        lines.append("🟢 knowledge base: local KB backend and embedding runtime look ready")
     elif kb_status == "warning":
         detail = kb_warnings[0] if kb_warnings else "knowledge-base attention required"
         lines.append(f"🟡 knowledge base: {detail}")

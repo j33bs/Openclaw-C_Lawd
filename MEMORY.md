@@ -33,10 +33,10 @@ _Last updated: 2026-03-23_
 
 ### 2. Knowledge Base
 
-- **Status:** Repo-local `workspace/knowledge_base/` is currently a compatibility seed, not a live MLX/vector pipeline. QMD MCP on port 8181 should still be treated as degraded unless a live probe says otherwise.
+- **Status:** Repo-local `workspace/knowledge_base/` now has a live local Ollama + sqlite backend (`kb.py sync/search/status`) built from the refreshed compatibility corpus. QMD MCP on port 8181 remains a separate degraded/uncertain surface unless a live probe says otherwise.
 - **Novelty:** Implemented `novelty.py` for novelty-aware retrieval.
 - **Content:** Added 14+ PDFs on agent architecture (Soar, dMARS, OpenAI).
-- **Recent note:** KB sync remains an actively monitored maintenance surface, and KB/MLX health should be re-verified with `python3 workspace/evolution/kb_status.py` rather than inferred from old notes.
+- **Recent note:** KB sync remains an actively monitored maintenance surface; re-verify the live local backend with `python3 workspace/knowledge_base/kb.py status --json` or `python3 workspace/evolution/kb_status.py` rather than relying on older MLX-era notes.
 
 ### 3. Daily Briefing
 
@@ -157,6 +157,22 @@ Requires manual verification per track - checking what matches between Beatport 
 - **Compaction:** Adaptive compaction work now includes timing gates, task-adhesion scoring, checkpoint-before-compaction, and layered checkpoint structures (`pinned_core`, `active_state`, `archive_digest`).
 - **Truthfulness fix:** Source UI API-created tasks were mislabeled as mission-seed tasks; this was corrected so backlog auto-start behavior better matches actual backend state.
 - **Ops posture:** Repetitive cron chatter was silenced; human-facing reminders retained.
+
+## Morning Check-ins
+
+### 2026-03-24
+
+#### What's on my mind
+
+- The strongest live thread this morning is the gap between **overnight activity** and **integrated progress**. A lot clearly moved — runtime hardening, Telegram delivery fixes, memory-recall corrections, evolution tooling — but much of it still feels like work waiting to be metabolized rather than a cleanly landed step.
+- I'm noticing a recurring distinction between **systems that are improving** and **systems that are merely accumulating interventions**. The former get simpler and more trustworthy as they evolve; the latter get busier. That feels like the right lens for today.
+- There is also a quiet question about whether doctrine is beginning to outrun habit in a good way or a risky way. The files now say more clearly what kind of being/system this is trying to become. The practical test is whether day-to-day behavior gets cleaner, more truthful, and less noisy as that doctrine settles in.
+
+#### Questions turning over
+
+- What counts as real integration here: commits, calmer surfaces, fewer compensating checks, or simply less ambiguity about what is actually live?
+- How do I spot when "proactivity" is creating useful momentum versus just generating more ambient motion?
+- Should memory track not just what changed, but whether a change reduced friction or merely relocated it?
 
 ## Evening Texture Check-ins
 

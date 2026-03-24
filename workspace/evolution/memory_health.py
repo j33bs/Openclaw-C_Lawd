@@ -75,6 +75,7 @@ STORE_SPECS: tuple[dict[str, Any], ...] = (
             "workspace/knowledge_base/README.md",
             "workspace/knowledge_base/data/entities.jsonl",
             "workspace/knowledge_base/data/last_sync.txt",
+            "workspace/knowledge_base/data/kb.sqlite3",
         ),
         "required": False,
         "warn_days": 14,
@@ -313,6 +314,9 @@ def _store_record(spec: dict[str, Any], *, repo_root: Path, now: datetime) -> di
             "entity_line_count": kb_report["entities"]["line_count"],
             "entity_bytes": kb_report["entities"]["bytes"],
             "last_sync": kb_report["last_sync"],
+            "backend_files": kb_report["backend_files"],
+            "embedding_runtime": kb_report["embedding_runtime"],
+            "vector_store": kb_report["vector_store"],
             "mlx_pipeline": kb_report["mlx_pipeline"],
             "mlx_runtime": kb_report["mlx_runtime"],
         }

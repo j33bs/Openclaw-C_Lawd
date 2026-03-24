@@ -158,3 +158,4 @@ memory/.daemon-state.json
 memory/.daemon-watcher-state.json
 memory/daemon-watcher-state.json
 workspace/knowledge_base/data/last_sync.txt
+workspace/knowledge_base/data/kb.sqlite3
