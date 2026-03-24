@@ -10,3 +10,8 @@ Compatibility and cutover notes live here when they need a repo-local landing sp
   experiments.
 - `compute_happiness_meaning_backlog.md` is the prioritized implementation queue derived from the
   charter and rubric.
+- `flourishing_system_roadmap.md` is the repo-grounded roadmap for turning the flourishing mission
+  into real implementation slices.
+- `flourishing_backlog_implementation.md` is the concrete task queue derived from that roadmap.
+- `recent_continuity_bundle_design.md` specifies the first recommended build slice.
+- `flourishing_integration_points.md` maps the roadmap to concrete files and modules.
