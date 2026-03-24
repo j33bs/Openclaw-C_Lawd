@@ -293,19 +293,34 @@ describe("filterBootstrapFilesForSession", () => {
     },
   ];
 
+  const rootMemoryNames = new Set(["MEMORY.md", "memory.md"]);
+
   it("returns all files for main session (no sessionKey)", () => {
     const result = filterBootstrapFilesForSession(mockFiles);
     expect(result).toHaveLength(mockFiles.length);
   });
 
-  it("returns all files for normal (non-subagent, non-cron) session key", () => {
-    const result = filterBootstrapFilesForSession(mockFiles, "agent:default:chat:main");
+  it("returns all files for owner direct session key", () => {
+    const result = filterBootstrapFilesForSession(mockFiles, "agent:default:chat:main", true);
     expect(result).toHaveLength(mockFiles.length);
   });
 
-  it("filters to allowlist for subagent sessions", () => {
+  it("drops root memory for non-owner direct sessions", () => {
+    const result = filterBootstrapFilesForSession(mockFiles, "agent:default:chat:main", false);
+    expect(
+      result.map((file) => file.name).filter((name) => rootMemoryNames.has(name)),
+    ).toHaveLength(0);
+    expect(result.some((file) => file.name === "memory/2026-03-24.md")).toBe(true);
+    expect(result.some((file) => file.name === "nodes/c_lawd/MEMORY.md")).toBe(true);
+  });
+
+  it("drops root memory for subagent sessions while preserving daily notes and pinned node docs", () => {
     const result = filterBootstrapFilesForSession(mockFiles, "agent:main:subagent:task-1");
-    expect(result).toHaveLength(mockFiles.length);
+    expect(
+      result.map((file) => file.name).filter((name) => rootMemoryNames.has(name)),
+    ).toHaveLength(0);
+    expect(result.some((file) => file.name === "memory/2026-03-24.md")).toBe(true);
+    expect(result.some((file) => file.name === "nodes/c_lawd/MEMORY.md")).toBe(true);
   });
 
   it("filters to allowlist for cron sessions", () => {

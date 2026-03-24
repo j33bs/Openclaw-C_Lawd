@@ -5,7 +5,11 @@ import path from "node:path";
 import { openBoundaryFile } from "../infra/boundary-file-read.js";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { runCommandWithTimeout } from "../process/exec.js";
-import { isCronSessionKey, isSubagentSessionKey } from "../routing/session-key.js";
+import {
+  isCronSessionKey,
+  isSubagentSessionKey,
+  parseAgentSessionKey,
+} from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
 import { resolveWorkspaceTemplateDir } from "./workspace-templates.js";
 
@@ -621,17 +625,55 @@ const MINIMAL_BOOTSTRAP_ALLOWLIST = new Set([
   DEFAULT_USER_FILENAME,
 ]);
 
+const ROOT_MEMORY_BOOTSTRAP_NAMES = new Set([DEFAULT_MEMORY_FILENAME, DEFAULT_MEMORY_ALT_FILENAME]);
+
+function isRootMemoryBootstrapFile(file: WorkspaceBootstrapFile): boolean {
+  return ROOT_MEMORY_BOOTSTRAP_NAMES.has(file.name);
+}
+
+function resolveSessionChatType(
+  sessionKey: string | undefined,
+): "direct" | "group" | "channel" | "unknown" {
+  const parsed = parseAgentSessionKey(sessionKey);
+  const scoped = parsed?.rest ?? (sessionKey ?? "").trim().toLowerCase();
+  if (!scoped) {
+    return "unknown";
+  }
+  const tokens = new Set(scoped.split(":").filter(Boolean));
+  if (tokens.has("group")) {
+    return "group";
+  }
+  if (tokens.has("channel")) {
+    return "channel";
+  }
+  if (tokens.has("direct") || tokens.has("dm")) {
+    return "direct";
+  }
+  return "unknown";
+}
+
 export function filterBootstrapFilesForSession(
   files: WorkspaceBootstrapFile[],
   sessionKey?: string,
+  senderIsOwner?: boolean,
 ): WorkspaceBootstrapFile[] {
-  if (!sessionKey || (!isSubagentSessionKey(sessionKey) && !isCronSessionKey(sessionKey))) {
+  if (!sessionKey) {
     return files;
+  }
+  if (isCronSessionKey(sessionKey)) {
+    return files.filter((file) => MINIMAL_BOOTSTRAP_ALLOWLIST.has(file.name));
   }
   if (isSubagentSessionKey(sessionKey)) {
-    return files;
+    return files.filter((file) => !isRootMemoryBootstrapFile(file));
   }
-  return files.filter((file) => MINIMAL_BOOTSTRAP_ALLOWLIST.has(file.name));
+  const chatType = resolveSessionChatType(sessionKey);
+  if (chatType === "group" || chatType === "channel") {
+    return files.filter((file) => !isRootMemoryBootstrapFile(file));
+  }
+  if (senderIsOwner === false) {
+    return files.filter((file) => !isRootMemoryBootstrapFile(file));
+  }
+  return files;
 }
 
 export async function loadExtraBootstrapFiles(

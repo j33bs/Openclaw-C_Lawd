@@ -67,6 +67,7 @@ export async function resolveBootstrapFilesForRun(params: {
   sessionKey?: string;
   sessionId?: string;
   agentId?: string;
+  senderIsOwner?: boolean;
   warn?: (message: string) => void;
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
@@ -79,7 +80,7 @@ export async function resolveBootstrapFilesForRun(params: {
       })
     : await loadWorkspaceBootstrapFiles(params.workspaceDir);
   const bootstrapFiles = applyContextModeFilter({
-    files: filterBootstrapFilesForSession(rawFiles, sessionKey),
+    files: filterBootstrapFilesForSession(rawFiles, sessionKey, params.senderIsOwner),
     contextMode: params.contextMode,
     runKind: params.runKind,
   });
@@ -92,7 +93,10 @@ export async function resolveBootstrapFilesForRun(params: {
     sessionId: params.sessionId,
     agentId: params.agentId,
   });
-  return sanitizeBootstrapFiles(updated, params.warn);
+  return sanitizeBootstrapFiles(
+    filterBootstrapFilesForSession(updated, sessionKey, params.senderIsOwner),
+    params.warn,
+  );
 }
 
 export async function resolveBootstrapContextForRun(params: {
@@ -101,6 +105,7 @@ export async function resolveBootstrapContextForRun(params: {
   sessionKey?: string;
   sessionId?: string;
   agentId?: string;
+  senderIsOwner?: boolean;
   warn?: (message: string) => void;
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
