@@ -22,6 +22,7 @@ SOURCE_PATTERNS: tuple[str, ...] = (
     "USER.md",
     "nodes/c_lawd/*.md",
     "workspace/governance/**/*.md",
+    "workspace/profile/**/*.md",
     "workspace/research/**/*.md",
     "workspace/memory/*.md",
     "workspace/knowledge_base/README.md",

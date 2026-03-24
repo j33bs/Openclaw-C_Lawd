@@ -1,6 +1,6 @@
 # MEMORY.md - Long-Term Context
 
-_Last updated: 2026-03-23_
+_Last updated: 2026-03-24_
 
 ## Morning Check-ins
 
@@ -47,6 +47,8 @@ _Last updated: 2026-03-23_
 
 - **Framing:** TACTI is _not_ IPNB for AI; it is the relational framework _between_ human and agent.
 - **Love:** Defined as "knowledge that serves the relationship" (practical co-regulation).
+- **Purpose direction (2026-03-24):** Research should be dedicated to discovering how compute can cultivate human happiness, meaning, and authentic flourishing.
+- **Guardrail:** Do not collapse this into shallow happiness-maxing, engagement capture, or synthetic comfort; target coherence, vitality, agency, truth-contact, and connection to what matters.
 - **Autonomous Build:** Executed 6-hour autonomous session (Feb 21) creating core TACTI modules.
 - **High Leverage:** Prioritized list in `workspace/TEN_HIGH_LEVERAGE.md`.
 - **Research policy:** Grokipedia only; Wikipedia is banned.

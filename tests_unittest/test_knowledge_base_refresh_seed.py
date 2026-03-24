@@ -36,6 +36,11 @@ def _seed_repo(root: Path) -> None:
         "# Research Home\n\nStable research notes.\n",
         encoding="utf-8",
     )
+    (root / "workspace" / "profile").mkdir(parents=True, exist_ok=True)
+    (root / "workspace" / "profile" / "openclaw_docs_inventory.md").write_text(
+        "# OpenClaw Docs Inventory\n\nFresh upstream docs findings.\n",
+        encoding="utf-8",
+    )
     (root / "nodes" / "c_lawd").mkdir(parents=True, exist_ok=True)
     (root / "nodes" / "c_lawd" / "CONVERSATION_KERNEL.md").write_text(
         "# Kernel\n\nDirect-user surface.\n",
@@ -70,12 +75,15 @@ class TestKnowledgeBaseRefreshSeed(unittest.TestCase):
             ]
 
             self.assertEqual(summary["status"], "ok")
-            self.assertEqual(summary["entities_written"], 4)
-            self.assertEqual(summary["sources_considered"], 4)
+            self.assertEqual(summary["entities_written"], 5)
+            self.assertEqual(summary["sources_considered"], 5)
             self.assertEqual(summary["skipped_sources"], 0)
-            self.assertEqual(len(rows), 4)
+            self.assertEqual(len(rows), 5)
             self.assertTrue(all(row["created_at"] == summary["snapshot_at"] for row in rows))
             self.assertTrue(all("source_path" in row for row in rows))
+            self.assertTrue(
+                any(row["source_path"] == "workspace/profile/openclaw_docs_inventory.md" for row in rows)
+            )
             self.assertEqual(last_sync_path.read_text(encoding="utf-8").strip(), summary["snapshot_at"])
             self.assertTrue(any(dst == "entities.jsonl" for _, dst in calls))
             self.assertTrue(any(dst == "last_sync.txt" for _, dst in calls))
@@ -92,8 +100,8 @@ class TestKnowledgeBaseRefreshSeed(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(exit_code, 0)
             self.assertEqual(payload["status"], "ok")
-            self.assertEqual(payload["entities_written"], 4)
-            self.assertEqual(payload["sources_considered"], 4)
+            self.assertEqual(payload["entities_written"], 5)
+            self.assertEqual(payload["sources_considered"], 5)
             self.assertEqual(payload["entities_path"], "workspace/knowledge_base/data/entities.jsonl")
             self.assertEqual(payload["last_sync_path"], "workspace/knowledge_base/data/last_sync.txt")
 
