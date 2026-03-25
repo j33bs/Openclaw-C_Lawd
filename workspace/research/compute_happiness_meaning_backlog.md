@@ -1,8 +1,18 @@
 # Compute, Happiness, and Meaning — Prioritized Backlog
 
-_Last updated: 2026-03-24_
+_Last updated: 2026-03-25_
 
 This is the first concrete queue derived from the charter and rubric.
+
+The broader scored option space lives in `100_flourishing_integrations.md`; this backlog is the
+narrower set of current bets selected from that reservoir.
+
+The strongest current overlaps are:
+
+- `#3 Meaning-Weighted Recall`
+- `#16 Meaning-Anchored Morning Briefing`
+- `#77 Truthfulness Audit`
+- `#82 System Health Heartbeat`
 
 Scoring is approximate and intended to force tradeoff thinking, not pretend precision.
 

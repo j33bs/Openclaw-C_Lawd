@@ -1,6 +1,6 @@
 # Flourishing Mission — Repo-Grounded System Roadmap
 
-_Last updated: 2026-03-24_
+_Last updated: 2026-03-25_
 
 This turns the current flourishing charter into an implementation plan anchored in real repo surfaces.
 
@@ -313,6 +313,92 @@ Build next: 5. meaning-anchor briefing rewrite 6. collapse-aware response shapin
 Build after that: 8. proposal preflight 9. flourishing instrumentation pipeline 10. cross-surface drift receipting
 
 **Exit condition:** roadmap discipline and trend visibility exist without metric theater.
+
+---
+
+## Full inventory coverage
+
+`100_flourishing_integrations.md` is now treated as the broader scored reservoir for this roadmap.
+The 10 changes above are the first implementation wedge, not the whole mission.
+The detailed item-level mapping now lives in `workspace/research/flourishing_inventory_crosswalk.md`.
+The default next-pull queue now lives in `workspace/research/flourishing_inventory_shortlist.md`.
+
+### Track 1 — Memory & continuity (items 1-15 | avg C2.1 M2.4 F2.1)
+
+This is mostly Phase A, then later memory-provenance, contradiction, value-drift, forgetting,
+and memory-metabolism work.
+
+**Primary surfaces:** `src/agents/tools/memory-tool.ts`, `src/agents/workspace.ts`,
+`src/memory/*`, `workspace/memory/*`, `memory/*.md`
+
+### Track 2 — Daily rhythms & orientation (items 16-30 | avg C1.3 M2.3 F2.8)
+
+This starts with Phase B briefing and collapse handling, then expands into energy-aware
+sequencing, weekly reviews, recovery, transition rituals, and sabbath mode.
+
+**Primary surfaces:** `workspace/governance/HEARTBEAT.md`, `src/cron/service/timer.ts`,
+`src/cron/run-log.ts`, `src/infra/heartbeat-runner.ts`, `workspace/memory/*`
+
+### Track 3 — Relational & TACTI (items 31-45 | avg C1.3 M2.4 F2.5)
+
+This extends collapse-aware shaping and handoff quality into repair tracking, arousal matching,
+bid awareness, disagreement protocol, humor, silence, and relational temperature.
+
+**Primary surfaces:** `workspace/memory/tacti_core.py`,
+`workspace/memory/tracker_adapters.py`, `workspace/memory/relationship_tracker.py`,
+`nodes/c_lawd/CONVERSATION_KERNEL.md`, `src/agents/flourishing-response-shaping.ts`
+
+### Track 4 — Knowledge & learning (items 46-60 | avg C2.0 M2.6 F1.9)
+
+This is currently underrepresented in the first slice and should expand next through the KB,
+memory ranking, concept maturity, and learning-loop surfaces.
+
+**Primary surfaces:** `workspace/knowledge_base/*`, `src/memory/*`,
+`workspace/research/*`, `src/agents/memory-search.ts`
+
+### Track 5 — Creative & expressive (items 61-72 | avg C1.3 M2.2 F2.7)
+
+This remains later because it is high-value but easier to make decorative. It should stay
+grounded in voice, writing, story, and visual-thinking surfaces already in the repo.
+
+**Primary surfaces:** `src/agents/tools/tts-tool.ts`, `src/tts/*`,
+`extensions/voice-call/src/*`, `workspace/memory/tonights_story.md`,
+`src/tui/components/markdown-message.ts`
+
+### Track 6 — Governance & self-evolution (items 73-85 | avg C2.0 M2.4 F2.2)
+
+This overlaps heavily with Phase C and should absorb the full anti-fragmentation, truthfulness,
+complexity-budget, automation-sunset, and graceful-degradation lane.
+
+**Primary surfaces:** `src/flourishing/*`, `workspace/evolution/*`,
+`src/commands/health.ts`, `src/gateway/channel-health-monitor.ts`,
+`workspace/governance/*`
+
+### Track 7 — Physical world & embodiment (items 86-92 | avg C1.3 M1.1 F2.7)
+
+This is intentionally later and higher-trust because it depends on body, location, or
+environmental signals. Use existing arousal and heartbeat surfaces first, then only add new
+connectors with explicit consent.
+
+**Primary surfaces:** `workspace/memory/arousal_tracker.py`,
+`workspace/memory/arousal_state.json`, `workspace/memory/tacti_core.py`,
+`src/infra/heartbeat-runner.ts`, `src/cron/service/*`
+
+### Track 8 — Social & relational (items 93-100 | avg C1.5 M2.6 F2.6)
+
+This is also underrepresented in the first slice. It should be built on top of relationship
+memory and existing messaging channels rather than as a separate social subsystem.
+
+**Primary surfaces:** `workspace/memory/relationship_tracker.py`,
+`extensions/telegram/src/*`, `extensions/discord/src/monitor/*`,
+`extensions/imessage/src/monitor/*`, `src/infra/outbound/message-action-runner.ts`
+
+The practical reading is:
+
+- Phase A-C remain the current build order.
+- Tracks 4, 5, 7, and 8 are now explicitly integrated as later lanes instead of floating outside
+  the roadmap.
+- The 100-item doc remains the source inventory; this roadmap now owns the selection structure.
 
 ---
 
