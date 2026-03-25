@@ -69,6 +69,15 @@ type TelegramThreadBindingsState = {
   bindingsByAccountConversation: Map<string, TelegramThreadBindingRecord>;
 };
 
+type TelegramThreadBindingsPersistState = {
+  writesByAccountId: Map<string, Promise<void>>;
+};
+
+type TelegramThreadBindingsTestHooks = {
+  persistWriter?: typeof writeJsonAtomic;
+  persistLogger?: typeof logVerbose;
+};
+
 /**
  * Keep Telegram thread binding state shared across bundled chunks so routing,
  * binding lookups, and binding mutations all observe the same live registry.
@@ -84,6 +93,24 @@ const threadBindingsState = resolveGlobalSingleton<TelegramThreadBindingsState>(
 );
 const MANAGERS_BY_ACCOUNT_ID = threadBindingsState.managersByAccountId;
 const BINDINGS_BY_ACCOUNT_CONVERSATION = threadBindingsState.bindingsByAccountConversation;
+
+const TELEGRAM_THREAD_BINDINGS_PERSIST_STATE_KEY = Symbol.for(
+  "openclaw.telegramThreadBindingsPersistState",
+);
+const persistState = resolveGlobalSingleton<TelegramThreadBindingsPersistState>(
+  TELEGRAM_THREAD_BINDINGS_PERSIST_STATE_KEY,
+  () => ({
+    writesByAccountId: new Map<string, Promise<void>>(),
+  }),
+);
+
+const TELEGRAM_THREAD_BINDINGS_TEST_HOOKS_KEY = Symbol.for(
+  "openclaw.telegramThreadBindingsTestHooks",
+);
+const threadBindingTestHooks = resolveGlobalSingleton<TelegramThreadBindingsTestHooks>(
+  TELEGRAM_THREAD_BINDINGS_TEST_HOOKS_KEY,
+  () => ({}),
+);
 
 function normalizeDurationMs(raw: unknown, fallback: number): number {
   if (typeof raw !== "number" || !Number.isFinite(raw)) {
@@ -257,6 +284,11 @@ function summarizeLifecycleForLog(
   return `idle=${idleLabel} maxAge=${maxAgeLabel}`;
 }
 
+function logPersistFailure(accountId: string, err: unknown): void {
+  const logger = threadBindingTestHooks.persistLogger ?? logVerbose;
+  logger(`telegram thread bindings persist failed (${accountId}): ${String(err)}`);
+}
+
 function loadBindingsFromDisk(accountId: string): TelegramThreadBindingRecord[] {
   const filePath = resolveBindingsPath(accountId);
   try {
@@ -320,7 +352,7 @@ function loadBindingsFromDisk(accountId: string): TelegramThreadBindingRecord[] 
   }
 }
 
-async function persistBindingsToDisk(params: {
+async function persistBindingsToDiskNow(params: {
   accountId: string;
   persist: boolean;
 }): Promise<void> {
@@ -334,10 +366,29 @@ async function persistBindingsToDisk(params: {
     version: STORE_VERSION,
     bindings,
   };
-  await writeJsonAtomic(resolveBindingsPath(params.accountId), payload, {
+  const writer = threadBindingTestHooks.persistWriter ?? writeJsonAtomic;
+  await writer(resolveBindingsPath(params.accountId), payload, {
     mode: 0o600,
     trailingNewline: true,
     ensureDirMode: 0o700,
+  });
+}
+
+function persistBindingsToDisk(params: { accountId: string; persist: boolean }): Promise<void> {
+  if (!params.persist) {
+    return Promise.resolve();
+  }
+
+  const previous = persistState.writesByAccountId.get(params.accountId) ?? Promise.resolve();
+  const chained = previous.catch(() => undefined).then(() => persistBindingsToDiskNow(params));
+  const handled = chained.catch((err: unknown) => {
+    logPersistFailure(params.accountId, err);
+  });
+  persistState.writesByAccountId.set(params.accountId, handled);
+  return handled.finally(() => {
+    if (persistState.writesByAccountId.get(params.accountId) === handled) {
+      persistState.writesByAccountId.delete(params.accountId);
+    }
   });
 }
 
@@ -750,11 +801,20 @@ export function setTelegramThreadBindingMaxAgeBySessionKey(params: {
 }
 
 export const __testing = {
+  setPersistBindingsWriterForTests(writer?: typeof writeJsonAtomic) {
+    threadBindingTestHooks.persistWriter = writer;
+  },
+  setPersistBindingsLoggerForTests(logger?: typeof logVerbose) {
+    threadBindingTestHooks.persistLogger = logger;
+  },
   resetTelegramThreadBindingsForTests() {
     for (const manager of MANAGERS_BY_ACCOUNT_ID.values()) {
       manager.stop();
     }
     MANAGERS_BY_ACCOUNT_ID.clear();
     BINDINGS_BY_ACCOUNT_CONVERSATION.clear();
+    persistState.writesByAccountId.clear();
+    delete threadBindingTestHooks.persistWriter;
+    delete threadBindingTestHooks.persistLogger;
   },
 };
