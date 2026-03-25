@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveUserTimezone } from "../agents/date-time.js";
 import type { CliDeps } from "../cli/deps.js";
 import { createOutboundSendDeps } from "../cli/outbound-send-deps.js";
 import { loadConfig } from "../config/config.js";
@@ -11,6 +13,8 @@ import { resolveStorePath } from "../config/sessions/paths.js";
 import { resolveFailureDestination, sendFailureNotificationAnnounce } from "../cron/delivery.js";
 import { runCronIsolatedAgentTurn } from "../cron/isolated-agent.js";
 import { resolveDeliveryTarget } from "../cron/isolated-agent/delivery-target.js";
+import { runFitnessCheck } from "../cron/jobs/fitness-check.js";
+import { runSunsetCheck } from "../cron/jobs/sunset-check.js";
 import {
   appendCronRunLog,
   resolveCronRunLogPath,
@@ -18,7 +22,9 @@ import {
 } from "../cron/run-log.js";
 import { CronService } from "../cron/service.js";
 import { resolveCronStorePath } from "../cron/store.js";
+import type { CronJobCreate } from "../cron/types.js";
 import { normalizeHttpWebhookUrl } from "../cron/webhook-url.js";
+import { writeTruthfulnessAuditSnapshot } from "../flourishing/truthfulness-audit.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { runHeartbeatOnce } from "../infra/heartbeat-runner.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
@@ -37,6 +43,24 @@ export type GatewayCronState = {
 };
 
 const CRON_WEBHOOK_TIMEOUT_MS = 10_000;
+const FITNESS_PROPOSAL_TIMEOUT_MS = 10_000;
+const DEFAULT_CRON_REVIEW_WINDOW_DAYS = 30;
+const FLOURISHING_BUILTIN_MESSAGES = {
+  truthfulnessAudit: "__builtin__:truthfulness-audit",
+  fitnessSweep: "__builtin__:fitness-sweep",
+  sunsetCheck: "__builtin__:sunset-check",
+} as const;
+
+type FlourishingBuiltinMessage =
+  (typeof FLOURISHING_BUILTIN_MESSAGES)[keyof typeof FLOURISHING_BUILTIN_MESSAGES];
+
+type ProposalLifecycleSummary = {
+  ok: boolean;
+  staleCount: number;
+  blockedCount: number;
+  outputPath?: string;
+  error?: string;
+};
 
 function trimToOptionalString(value: unknown): string | undefined {
   if (typeof value !== "string") {
@@ -141,10 +165,286 @@ async function postCronWebhook(params: {
   }
 }
 
+function formatDateStamp(nowMs: number, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(nowMs));
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (year && month && day) {
+    return `${year}-${month}-${day}`;
+  }
+  return new Date(nowMs).toISOString().slice(0, 10);
+}
+
+function addDays(dateStamp: string, days: number): string {
+  const parsed = Date.parse(`${dateStamp}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed)) {
+    return dateStamp;
+  }
+  return new Date(parsed + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function isFlourishingBuiltinMessage(message: string): message is FlourishingBuiltinMessage {
+  return Object.values(FLOURISHING_BUILTIN_MESSAGES).includes(message as FlourishingBuiltinMessage);
+}
+
+function buildFlourishingBuiltinSpecs(params: {
+  timezone?: string;
+  nowMs?: number;
+}): Array<{ marker: FlourishingBuiltinMessage; job: CronJobCreate }> {
+  const timezone = resolveUserTimezone(params.timezone ?? process.env.TZ);
+  const nowMs = params.nowMs ?? Date.now();
+  const today = formatDateStamp(nowMs, timezone);
+  const reviewDate = addDays(today, DEFAULT_CRON_REVIEW_WINDOW_DAYS);
+
+  return [
+    {
+      marker: FLOURISHING_BUILTIN_MESSAGES.truthfulnessAudit,
+      job: {
+        name: "Flourishing Truthfulness Audit",
+        description:
+          "Runs the local truthfulness audit and records whether grounding surfaces are still live.",
+        enabled: true,
+        reviewDate,
+        schedule: { kind: "every", everyMs: 12 * 60 * 60 * 1000 },
+        sessionTarget: "isolated",
+        wakeMode: "now",
+        payload: {
+          kind: "agentTurn",
+          message: FLOURISHING_BUILTIN_MESSAGES.truthfulnessAudit,
+        },
+      },
+    },
+    {
+      marker: FLOURISHING_BUILTIN_MESSAGES.fitnessSweep,
+      job: {
+        name: "Flourishing Fitness Sweep",
+        description:
+          "Runs the daily fitness assessment and proposal lifecycle check for the workspace.",
+        enabled: true,
+        reviewDate,
+        schedule: {
+          kind: "cron",
+          expr: "15 6 * * *",
+          tz: timezone,
+        },
+        sessionTarget: "isolated",
+        wakeMode: "now",
+        payload: {
+          kind: "agentTurn",
+          message: FLOURISHING_BUILTIN_MESSAGES.fitnessSweep,
+        },
+      },
+    },
+    {
+      marker: FLOURISHING_BUILTIN_MESSAGES.sunsetCheck,
+      job: {
+        name: "Flourishing Sunset Check",
+        description:
+          "Surfaces active cron jobs that are past review date without recent evidence of usefulness.",
+        enabled: true,
+        reviewDate,
+        schedule: {
+          kind: "cron",
+          expr: "0 9 * * 1",
+          tz: timezone,
+        },
+        sessionTarget: "isolated",
+        wakeMode: "now",
+        payload: {
+          kind: "agentTurn",
+          message: FLOURISHING_BUILTIN_MESSAGES.sunsetCheck,
+        },
+      },
+    },
+  ];
+}
+
+async function runExecFile(
+  command: string,
+  args: string[],
+  options: {
+    cwd: string;
+    timeout: number;
+  },
+): Promise<{ stdout: string; stderr: string }> {
+  return await new Promise((resolve, reject) => {
+    execFile(
+      command,
+      args,
+      {
+        cwd: options.cwd,
+        timeout: options.timeout,
+        maxBuffer: 1024 * 1024,
+        encoding: "utf8",
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(Object.assign(error, { stdout, stderr }));
+          return;
+        }
+        resolve({ stdout, stderr });
+      },
+    );
+  });
+}
+
+async function runProposalLifecycle(workspaceDir: string): Promise<ProposalLifecycleSummary> {
+  const scriptPath = `${workspaceDir}/workspace/evolution/proposal_lifecycle.py`;
+  try {
+    const { stdout } = await runExecFile("python3", [scriptPath, "--json"], {
+      cwd: workspaceDir,
+      timeout: FITNESS_PROPOSAL_TIMEOUT_MS,
+    });
+    const parsed = JSON.parse(stdout) as unknown;
+    const record =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    return {
+      ok: true,
+      staleCount:
+        typeof record.stale_count === "number" && Number.isFinite(record.stale_count)
+          ? record.stale_count
+          : 0,
+      blockedCount:
+        typeof record.blocked_count === "number" && Number.isFinite(record.blocked_count)
+          ? record.blocked_count
+          : 0,
+      outputPath: typeof record.output_path === "string" ? record.output_path : undefined,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      staleCount: 0,
+      blockedCount: 0,
+      error: formatErrorMessage(error),
+    };
+  }
+}
+
+async function runFlourishingBuiltinJob(params: {
+  message: FlourishingBuiltinMessage;
+  workspaceDir: string;
+  storePath: string;
+  logger: ReturnType<typeof getChildLogger>;
+}): Promise<{
+  status: "ok" | "error";
+  error?: string;
+  summary?: string;
+  lastEvidenceDate?: string;
+}> {
+  const lastEvidenceDate = formatDateStamp(Date.now(), resolveUserTimezone(process.env.TZ));
+  switch (params.message) {
+    case FLOURISHING_BUILTIN_MESSAGES.truthfulnessAudit: {
+      const result = await writeTruthfulnessAuditSnapshot(params.workspaceDir).catch((error) => ({
+        error: formatErrorMessage(error),
+      }));
+      if ("error" in result) {
+        return {
+          status: "error",
+          error: result.error,
+        };
+      }
+      return {
+        status: "ok",
+        summary: `truthfulness audit ${Math.round(result.passRate * 100)}% (${result.failures.length} failures)`,
+        lastEvidenceDate,
+      };
+    }
+    case FLOURISHING_BUILTIN_MESSAGES.fitnessSweep: {
+      const fitness = await runFitnessCheck({ workspaceDir: params.workspaceDir });
+      if (!fitness.ok) {
+        return {
+          status: "error",
+          error: fitness.error,
+        };
+      }
+      const proposalLifecycle = await runProposalLifecycle(params.workspaceDir);
+      if (!proposalLifecycle.ok) {
+        return {
+          status: "error",
+          error: `proposal lifecycle check failed: ${proposalLifecycle.error ?? "unknown error"}`,
+        };
+      }
+      return {
+        status: "ok",
+        summary: `fitness sweep ${fitness.redSignals.length} red signals; proposals stale=${proposalLifecycle.staleCount} blocked=${proposalLifecycle.blockedCount}`,
+        lastEvidenceDate,
+      };
+    }
+    case FLOURISHING_BUILTIN_MESSAGES.sunsetCheck: {
+      const result = await runSunsetCheck({
+        workspaceDir: params.workspaceDir,
+        storePath: params.storePath,
+      });
+      if (!result.ok) {
+        return {
+          status: "error",
+          error: result.error,
+        };
+      }
+      return {
+        status: "ok",
+        summary:
+          result.flaggedJobs.length > 0
+            ? `sunset check flagged ${result.flaggedJobs.length} jobs`
+            : "sunset check found no jobs needing review",
+        lastEvidenceDate,
+      };
+    }
+  }
+}
+
+export async function ensureFlourishingCronJobs(params: {
+  cron: CronService;
+  workspaceDir: string;
+  timezone?: string;
+  nowMs?: number;
+}): Promise<void> {
+  const existingJobs = await params.cron.list({ includeDisabled: true });
+  const existingByMarker = new Map<FlourishingBuiltinMessage, (typeof existingJobs)[number]>();
+  for (const job of existingJobs) {
+    if (job.payload.kind !== "agentTurn") {
+      continue;
+    }
+    if (isFlourishingBuiltinMessage(job.payload.message)) {
+      existingByMarker.set(job.payload.message, job);
+    }
+  }
+
+  for (const spec of buildFlourishingBuiltinSpecs({
+    timezone: params.timezone,
+    nowMs: params.nowMs,
+  })) {
+    const existing = existingByMarker.get(spec.marker);
+    if (!existing) {
+      await params.cron.add(spec.job);
+      continue;
+    }
+    const patch: Parameters<CronService["update"]>[1] = {};
+    if (!existing.description) {
+      patch.description = spec.job.description;
+    }
+    if (!existing.reviewDate) {
+      patch.reviewDate = spec.job.reviewDate;
+    }
+    if (Object.keys(patch).length > 0) {
+      await params.cron.update(existing.id, patch);
+    }
+  }
+}
+
 export function buildGatewayCronService(params: {
   cfg: ReturnType<typeof loadConfig>;
   deps: CliDeps;
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
+  workspaceDir?: string;
 }): GatewayCronState {
   const cronLogger = getChildLogger({ module: "cron" });
   const storePath = resolveCronStorePath(params.cfg.cron?.store);
@@ -283,6 +583,17 @@ export function buildGatewayCronService(params: {
       });
     },
     runIsolatedAgentJob: async ({ job, message, abortSignal }) => {
+      if (params.workspaceDir && isFlourishingBuiltinMessage(message)) {
+        if (abortSignal?.aborted) {
+          return { status: "error" as const, error: "cron: job execution timed out" };
+        }
+        return await runFlourishingBuiltinJob({
+          message,
+          workspaceDir: params.workspaceDir,
+          storePath,
+          logger: cronLogger,
+        });
+      }
       const { agentId, cfg: runtimeConfig } = resolveCronAgent(job.agentId);
       let sessionKey = `cron:${job.id}`;
       if (job.sessionTarget.startsWith("session:")) {

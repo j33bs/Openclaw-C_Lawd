@@ -2,7 +2,9 @@ import { createHmac, createHash } from "node:crypto";
 import type { ReasoningLevel, ThinkLevel } from "../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { MemoryCitationsMode } from "../config/types.memory.js";
+import type { ContinuityBundle } from "../memory/continuity-bundle.js";
 import { listDeliverableMessageChannels } from "../utils/message-channel.js";
+import { buildContinuityPromptSection } from "./continuity-prompt.js";
 import type { ResolvedTimeFormat } from "./date-time.js";
 import { buildFlourishingPromptSection } from "./flourishing-response-shaping.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
@@ -190,6 +192,9 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
 export function buildAgentSystemPrompt(params: {
   workspaceDir: string;
   flourishingPromptConfig?: import("./flourishing-response-shaping.js").FlourishingPromptConfig;
+  continuityBundle?: ContinuityBundle;
+  fragmentationLine?: string;
+  systemStateLine?: string;
   defaultThinkLevel?: ThinkLevel;
   reasoningLevel?: ReasoningLevel;
   extraSystemPrompt?: string;
@@ -416,6 +421,9 @@ export function buildAgentSystemPrompt(params: {
     readToolName,
   });
   const flourishingSection = buildFlourishingPromptSection(params.flourishingPromptConfig);
+  const continuitySection = params.continuityBundle
+    ? [buildContinuityPromptSection(params.continuityBundle), ""]
+    : [];
   const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
 
   // For "none" mode, return just the basic identity line
@@ -570,6 +578,11 @@ export function buildAgentSystemPrompt(params: {
       userTimezone,
     }),
     ...flourishingSection,
+    ...continuitySection,
+    params.fragmentationLine?.trim() ? params.fragmentationLine.trim() : "",
+    params.fragmentationLine?.trim() ? "" : "",
+    params.systemStateLine?.trim() ? params.systemStateLine.trim() : "",
+    params.systemStateLine?.trim() ? "" : "",
     "## Workspace Files (injected)",
     "These user-editable files are loaded by OpenClaw and included below in Project Context.",
     "",

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 on_error() {
-  echo "A2UI bundling failed. Re-run with: pnpm canvas:a2ui:bundle" >&2
-  echo "If this persists, verify pnpm deps and try again." >&2
+  echo "A2UI bundling failed. Re-run with: corepack pnpm canvas:a2ui:bundle" >&2
+  echo "If this persists, verify pnpm deps or corepack availability and try again." >&2
 }
 trap on_error ERR
 
@@ -12,6 +12,16 @@ HASH_FILE="$ROOT_DIR/src/canvas-host/a2ui/.bundle.hash"
 OUTPUT_FILE="$ROOT_DIR/src/canvas-host/a2ui/a2ui.bundle.js"
 A2UI_RENDERER_DIR="$ROOT_DIR/vendor/a2ui/renderers/lit"
 A2UI_APP_DIR="$ROOT_DIR/apps/shared/OpenClawKit/Tools/CanvasA2UI"
+PNPM_CMD=(pnpm)
+
+if ! command -v pnpm >/dev/null 2>&1; then
+  if command -v corepack >/dev/null 2>&1 && corepack pnpm --version >/dev/null 2>&1; then
+    PNPM_CMD=(corepack pnpm)
+  else
+    echo "pnpm is required for A2UI bundling, and corepack pnpm is unavailable." >&2
+    exit 1
+  fi
+fi
 
 # Docker builds exclude vendor/apps via .dockerignore.
 # In that environment we can keep a prebuilt bundle only if it exists.
@@ -85,7 +95,7 @@ if [[ -f "$HASH_FILE" ]]; then
   fi
 fi
 
-pnpm -s exec tsc -p "$A2UI_RENDERER_DIR/tsconfig.json"
+"${PNPM_CMD[@]}" -s exec tsc -p "$A2UI_RENDERER_DIR/tsconfig.json"
 if command -v rolldown >/dev/null 2>&1 && rolldown --version >/dev/null 2>&1; then
   rolldown -c "$A2UI_APP_DIR/rolldown.config.mjs"
 elif [[ -f "$ROOT_DIR/node_modules/.pnpm/node_modules/rolldown/bin/cli.mjs" ]]; then
@@ -94,7 +104,7 @@ elif [[ -f "$ROOT_DIR/node_modules/.pnpm/rolldown@1.0.0-rc.9/node_modules/rolldo
   node "$ROOT_DIR/node_modules/.pnpm/rolldown@1.0.0-rc.9/node_modules/rolldown/bin/cli.mjs" \
     -c "$A2UI_APP_DIR/rolldown.config.mjs"
 else
-  pnpm -s dlx rolldown -c "$A2UI_APP_DIR/rolldown.config.mjs"
+  "${PNPM_CMD[@]}" -s dlx rolldown -c "$A2UI_APP_DIR/rolldown.config.mjs"
 fi
 
 echo "$current_hash" > "$HASH_FILE"

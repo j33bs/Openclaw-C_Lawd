@@ -80,7 +80,7 @@ import type { startBrowserControlServerIfEnabled } from "./server-browser.js";
 import { createChannelManager } from "./server-channels.js";
 import { createAgentEventHandler } from "./server-chat.js";
 import { createGatewayCloseHandler } from "./server-close.js";
-import { buildGatewayCronService } from "./server-cron.js";
+import { buildGatewayCronService, ensureFlourishingCronJobs } from "./server-cron.js";
 import { startGatewayDiscovery } from "./server-discovery-runtime.js";
 import { applyGatewayLaneConcurrency } from "./server-lanes.js";
 import { startGatewayMaintenanceTimers } from "./server-maintenance.js";
@@ -706,6 +706,7 @@ export async function startGatewayServer(
     cfg: cfgAtStart,
     deps,
     broadcast,
+    workspaceDir: defaultWorkspaceDir,
   });
   let { cron, storePath: cronStorePath } = cronState;
 
@@ -830,6 +831,10 @@ export async function startGatewayServer(
       });
 
   if (!minimalTestGateway) {
+    await ensureFlourishingCronJobs({
+      cron,
+      workspaceDir: defaultWorkspaceDir,
+    }).catch((err) => logCron.error(`failed to seed flourishing cron jobs: ${String(err)}`));
     void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
   }
 
@@ -1030,6 +1035,7 @@ export async function startGatewayServer(
         const { applyHotReload, requestGatewayRestart } = createGatewayReloadHandlers({
           deps,
           broadcast,
+          defaultWorkspaceDir,
           getState: () => ({
             hooksConfig,
             hookClientIpConfig,

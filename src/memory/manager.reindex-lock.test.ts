@@ -5,9 +5,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { OpenClawConfig } from "../config/config.js";
 import type { MemoryIndexManager } from "./index.js";
 
-type EmbeddingTestMocksModule = typeof import("./embedding.test-mocks.js");
-type TestManagerHelpersModule = typeof import("./test-manager-helpers.js");
-
 describe("memory manager full reindex locking", () => {
   let fixtureRoot = "";
   let workspaceDir = "";

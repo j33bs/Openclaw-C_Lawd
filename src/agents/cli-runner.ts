@@ -2,13 +2,26 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import { resolveHeartbeatPrompt } from "../auto-reply/heartbeat.js";
 import type { ThinkLevel } from "../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../config/config.js";
+import { writeFragmentationAssessment } from "../flourishing/fragmentation-writer.js";
+import {
+  buildFragmentationPromptLine,
+  buildSystemStateDigest,
+  assembleSystemState,
+} from "../flourishing/system-state.js";
+import { readTactiSnapshot } from "../flourishing/tacti-state.js";
 import { shouldLogVerbose } from "../globals.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { assembleContinuityBundle } from "../memory/continuity-bundle.js";
+import { getMemorySearchManager } from "../memory/search-manager.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
-import { scopedHeartbeatWakeOptions } from "../routing/session-key.js";
+import {
+  isCronSessionKey,
+  isSubagentSessionKey,
+  scopedHeartbeatWakeOptions,
+} from "../routing/session-key.js";
 import { resolveSessionAgentIds } from "./agent-scope.js";
 import {
   analyzeBootstrapBudget,
@@ -147,6 +160,55 @@ export async function runCliAgent(params: {
     sessionAgentId === defaultAgentId
       ? resolveHeartbeatPrompt(params.config?.agents?.defaults?.heartbeat?.prompt)
       : undefined;
+  const isDirectChatSession =
+    !params.sessionKey ||
+    (!isCronSessionKey(params.sessionKey) && !isSubagentSessionKey(params.sessionKey));
+  let continuityBundle: import("../memory/continuity-bundle.js").ContinuityBundle | undefined;
+  let tactiSnapshot: import("../flourishing/tacti-state.js").TactiSnapshot | null = null;
+  let fragmentationLine: string | undefined;
+  let systemStateLine: string | undefined;
+  let flourishingPromptConfig:
+    | import("./flourishing-response-shaping.js").FlourishingPromptConfig
+    | undefined;
+  if (isDirectChatSession) {
+    await writeFragmentationAssessment(workspaceDir).catch(() => undefined);
+    const [memoryManagerResult, nextTactiSnapshot, systemState] = await Promise.all([
+      params.config
+        ? getMemorySearchManager({
+            cfg: params.config,
+            agentId: sessionAgentId,
+          }).catch(() => ({ manager: null }))
+        : Promise.resolve({ manager: null }),
+      readTactiSnapshot(workspaceDir).catch(() => null),
+      assembleSystemState(workspaceDir).catch(() => null),
+    ]);
+    tactiSnapshot = nextTactiSnapshot;
+    const memoryManager = memoryManagerResult.manager;
+    continuityBundle = await assembleContinuityBundle({
+      workspaceDir,
+      query: params.prompt,
+      memoryManager: memoryManager
+        ? {
+            searchKeyword: async (query: string) =>
+              await memoryManager.search(query, { maxResults: 3 }),
+          }
+        : undefined,
+    }).catch(() => undefined);
+    fragmentationLine = systemState
+      ? (buildFragmentationPromptLine(systemState) ?? undefined)
+      : undefined;
+    systemStateLine = systemState ? (buildSystemStateDigest(systemState) ?? undefined) : undefined;
+    flourishingPromptConfig = {
+      enabled: true,
+      meaningDensity: { enabled: true, executionMinScore: 2 },
+      responseMode: { enabled: true, defaultMode: "agency_first", collapseFailureThreshold: 2 },
+      repairLoop: { enabled: true },
+      liveSignals: {
+        continuityConfidence: continuityBundle?.confidence,
+        tactiSnapshot,
+      },
+    };
+  }
   const docsPath = await resolveOpenClawDocsPath({
     workspaceDir,
     argv1: process.argv[1],
@@ -156,6 +218,10 @@ export async function runCliAgent(params: {
   const systemPrompt = buildSystemPrompt({
     workspaceDir,
     config: params.config,
+    flourishingPromptConfig,
+    continuityBundle,
+    fragmentationLine,
+    systemStateLine,
     defaultThinkLevel: params.thinkLevel,
     extraSystemPrompt,
     ownerNumbers: params.ownerNumbers,

@@ -297,6 +297,25 @@ describe("noteMemorySearchHealth", () => {
   });
 
   it("does not warn in auto mode when an ollama provider is configured", async () => {
+    const ollamaProvider = {
+      baseUrl: "http://127.0.0.1:11434/v1",
+      api: "ollama",
+      models: [
+        {
+          id: "ollama/nomic-embed-text",
+          reasoning: false,
+          input: ["text"],
+          cost: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+          },
+          contextWindow: 8192,
+          maxTokens: 512,
+        },
+      ],
+    };
     resolveMemorySearchConfig.mockReturnValue({
       provider: "auto",
       local: {},
@@ -307,12 +326,10 @@ describe("noteMemorySearchHealth", () => {
       {
         models: {
           providers: {
-            ollama: {
-              baseUrl: "http://127.0.0.1:11434/v1",
-            },
+            ollama: ollamaProvider,
           },
         },
-      } as OpenClawConfig,
+      } as unknown as OpenClawConfig,
       {},
     );
 

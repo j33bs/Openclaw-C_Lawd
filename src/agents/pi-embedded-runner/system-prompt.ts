@@ -1,6 +1,7 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { MemoryCitationsMode } from "../../config/types.memory.js";
+import type { ContinuityBundle } from "../../memory/continuity-bundle.js";
 import type { ResolvedTimeFormat } from "../date-time.js";
 import type { EmbeddedContextFile } from "../pi-embedded-helpers.js";
 import { buildAgentSystemPrompt, type PromptMode } from "../system-prompt.js";
@@ -10,6 +11,10 @@ import type { ReasoningLevel, ThinkLevel } from "./utils.js";
 
 export function buildEmbeddedSystemPrompt(params: {
   workspaceDir: string;
+  flourishingPromptConfig?: import("../flourishing-response-shaping.js").FlourishingPromptConfig;
+  continuityBundle?: ContinuityBundle;
+  fragmentationLine?: string;
+  systemStateLine?: string;
   defaultThinkLevel?: ThinkLevel;
   reasoningLevel?: ReasoningLevel;
   extraSystemPrompt?: string;
@@ -55,6 +60,10 @@ export function buildEmbeddedSystemPrompt(params: {
 }): string {
   return buildAgentSystemPrompt({
     workspaceDir: params.workspaceDir,
+    flourishingPromptConfig: params.flourishingPromptConfig,
+    continuityBundle: params.continuityBundle,
+    fragmentationLine: params.fragmentationLine,
+    systemStateLine: params.systemStateLine,
     defaultThinkLevel: params.defaultThinkLevel,
     reasoningLevel: params.reasoningLevel,
     extraSystemPrompt: params.extraSystemPrompt,

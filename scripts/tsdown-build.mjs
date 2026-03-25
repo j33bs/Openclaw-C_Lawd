@@ -5,14 +5,46 @@ import { spawnSync } from "node:child_process";
 const logLevel = process.env.OPENCLAW_BUILD_VERBOSE ? "info" : "warn";
 const extraArgs = process.argv.slice(2);
 const INEFFECTIVE_DYNAMIC_IMPORT_RE = /\[INEFFECTIVE_DYNAMIC_IMPORT\]/;
-const result = spawnSync(
-  "pnpm",
-  ["exec", "tsdown", "--config-loader", "unrun", "--logLevel", logLevel, ...extraArgs],
-  {
+const spawnOptions = {
+  encoding: "utf8",
+  stdio: "pipe",
+  shell: process.platform === "win32",
+};
+
+function resolvePnpmRunner() {
+  const pnpmVersion = spawnSync("pnpm", ["--version"], {
     encoding: "utf8",
-    stdio: "pipe",
+    stdio: "ignore",
     shell: process.platform === "win32",
-  },
+  });
+  if (pnpmVersion.status === 0) {
+    return { command: "pnpm", prefix: [] };
+  }
+  const corepackVersion = spawnSync("corepack", ["pnpm", "--version"], {
+    encoding: "utf8",
+    stdio: "ignore",
+    shell: process.platform === "win32",
+  });
+  if (corepackVersion.status === 0) {
+    return { command: "corepack", prefix: ["pnpm"] };
+  }
+  return { command: "pnpm", prefix: [] };
+}
+
+const pnpmRunner = resolvePnpmRunner();
+const result = spawnSync(
+  pnpmRunner.command,
+  [
+    ...pnpmRunner.prefix,
+    "exec",
+    "tsdown",
+    "--config-loader",
+    "unrun",
+    "--logLevel",
+    logLevel,
+    ...extraArgs,
+  ],
+  spawnOptions,
 );
 
 const stdout = result.stdout ?? "";

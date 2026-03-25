@@ -52,6 +52,7 @@ function mergeManualRunSnapshotAfterReload(params: {
   jobId: string;
   snapshot: {
     enabled: boolean;
+    lastEvidenceDate?: string;
     updatedAtMs: number;
     state: CronJob["state"];
   } | null;
@@ -72,6 +73,7 @@ function mergeManualRunSnapshotAfterReload(params: {
     return;
   }
   reloaded.enabled = params.snapshot.enabled;
+  reloaded.lastEvidenceDate = params.snapshot.lastEvidenceDate;
   reloaded.updatedAtMs = params.snapshot.updatedAtMs;
   reloaded.state = params.snapshot.state;
 }
@@ -483,6 +485,7 @@ async function finishPreparedManualRun(
         status: coreResult.status,
         error: coreResult.error,
         delivered: coreResult.delivered,
+        lastEvidenceDate: coreResult.lastEvidenceDate,
         startedAt,
         endedAt,
       },
@@ -520,6 +523,7 @@ async function finishPreparedManualRun(
       ? null
       : {
           enabled: job.enabled,
+          lastEvidenceDate: coreResult.lastEvidenceDate ?? job.lastEvidenceDate,
           updatedAtMs: job.updatedAtMs,
           state: structuredClone(job.state),
         };

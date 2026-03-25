@@ -19,6 +19,7 @@ import {
   triggerInternalHook,
 } from "../hooks/internal-hooks.js";
 import { loadInternalHooks } from "../hooks/loader.js";
+import { registerTactiHooks } from "../hooks/tacti-hooks.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import type { loadOpenClawPlugins } from "../plugins/loader.js";
 import { type PluginServicesHandle, startPluginServices } from "../plugins/services.js";
@@ -121,6 +122,7 @@ export async function startGatewaySidecars(params: {
   } catch (err) {
     params.logHooks.error(`failed to load hooks: ${String(err)}`);
   }
+  registerTactiHooks(params.defaultWorkspaceDir);
 
   // Launch configured channels so gateway replies via the surface the message came from.
   // Tests can opt out via OPENCLAW_SKIP_CHANNELS (or legacy OPENCLAW_SKIP_PROVIDERS).

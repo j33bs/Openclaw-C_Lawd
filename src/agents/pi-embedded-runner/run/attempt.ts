@@ -10,12 +10,21 @@ import {
 import { resolveHeartbeatPrompt } from "../../../auto-reply/heartbeat.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
 import type { OpenClawConfig } from "../../../config/config.js";
+import { writeFragmentationAssessment } from "../../../flourishing/fragmentation-writer.js";
+import {
+  buildFragmentationPromptLine,
+  buildSystemStateDigest,
+  assembleSystemState,
+} from "../../../flourishing/system-state.js";
+import { readTactiSnapshot } from "../../../flourishing/tacti-state.js";
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
 import {
   ensureGlobalUndiciEnvProxyDispatcher,
   ensureGlobalUndiciStreamTimeouts,
 } from "../../../infra/net/undici-global-dispatcher.js";
 import { MAX_IMAGE_BYTES } from "../../../media/constants.js";
+import { assembleContinuityBundle } from "../../../memory/continuity-bundle.js";
+import { getMemorySearchManager } from "../../../memory/search-manager.js";
 import { resolveSignalReactionLevel } from "../../../plugin-sdk/signal.js";
 import {
   resolveTelegramInlineButtonsScope,
@@ -1690,9 +1699,68 @@ export async function runEmbeddedAttempt(
     const heartbeatPrompt = isDefaultAgent
       ? resolveHeartbeatPrompt(params.config?.agents?.defaults?.heartbeat?.prompt)
       : undefined;
+    const includeFlourishingContext =
+      promptMode === "full" &&
+      params.trigger === "user" &&
+      !params.groupId &&
+      params.senderIsOwner === true;
+    let continuityBundle:
+      | import("../../../memory/continuity-bundle.js").ContinuityBundle
+      | undefined;
+    let tactiSnapshot: import("../../../flourishing/tacti-state.js").TactiSnapshot | null = null;
+    let fragmentationLine: string | undefined;
+    let systemStateLine: string | undefined;
+    let flourishingPromptConfig:
+      | import("../../flourishing-response-shaping.js").FlourishingPromptConfig
+      | undefined;
+    if (includeFlourishingContext) {
+      await writeFragmentationAssessment(effectiveWorkspace).catch(() => undefined);
+      const [memoryManagerResult, nextTactiSnapshot, systemState] = await Promise.all([
+        params.config
+          ? getMemorySearchManager({
+              cfg: params.config,
+              agentId: sessionAgentId,
+            }).catch(() => ({ manager: null }))
+          : Promise.resolve({ manager: null }),
+        readTactiSnapshot(effectiveWorkspace).catch(() => null),
+        assembleSystemState(effectiveWorkspace).catch(() => null),
+      ]);
+      tactiSnapshot = nextTactiSnapshot;
+      const memoryManager = memoryManagerResult.manager;
+      continuityBundle = await assembleContinuityBundle({
+        workspaceDir: effectiveWorkspace,
+        query: params.prompt,
+        memoryManager: memoryManager
+          ? {
+              searchKeyword: async (query: string) =>
+                await memoryManager.search(query, { maxResults: 3 }),
+            }
+          : undefined,
+      }).catch(() => undefined);
+      fragmentationLine = systemState
+        ? (buildFragmentationPromptLine(systemState) ?? undefined)
+        : undefined;
+      systemStateLine = systemState
+        ? (buildSystemStateDigest(systemState) ?? undefined)
+        : undefined;
+      flourishingPromptConfig = {
+        enabled: true,
+        meaningDensity: { enabled: true, executionMinScore: 2 },
+        responseMode: { enabled: true, defaultMode: "agency_first", collapseFailureThreshold: 2 },
+        repairLoop: { enabled: true },
+        liveSignals: {
+          continuityConfidence: continuityBundle?.confidence,
+          tactiSnapshot,
+        },
+      };
+    }
 
     const appendPrompt = buildEmbeddedSystemPrompt({
       workspaceDir: effectiveWorkspace,
+      flourishingPromptConfig,
+      continuityBundle,
+      fragmentationLine,
+      systemStateLine,
       defaultThinkLevel: params.thinkLevel,
       reasoningLevel: params.reasoningLevel ?? "off",
       extraSystemPrompt: params.extraSystemPrompt,

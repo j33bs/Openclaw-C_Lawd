@@ -497,6 +497,35 @@ describe("applyJobPatch rejects sessionTarget main for non-default agents", () =
   });
 });
 
+describe("review metadata", () => {
+  it("preserves reviewDate and lastEvidenceDate during create and patch", () => {
+    const now = Date.parse("2026-03-25T12:00:00.000Z");
+    const state = createMockState(now, { defaultAgentId: "main" });
+
+    const job = createJob(state, {
+      name: "review-metadata",
+      enabled: true,
+      schedule: { kind: "every", everyMs: 60_000 },
+      sessionTarget: "main",
+      wakeMode: "now",
+      payload: { kind: "systemEvent", text: "tick" },
+      reviewDate: " 2026-04-01 ",
+      lastEvidenceDate: "2026-03-20 ",
+    });
+
+    expect(job.reviewDate).toBe("2026-04-01");
+    expect(job.lastEvidenceDate).toBe("2026-03-20");
+
+    applyJobPatch(job, {
+      reviewDate: " 2026-04-02 ",
+      lastEvidenceDate: " 2026-03-21 ",
+    });
+
+    expect(job.reviewDate).toBe("2026-04-02");
+    expect(job.lastEvidenceDate).toBe("2026-03-21");
+  });
+});
+
 describe("cron stagger defaults", () => {
   it("defaults top-of-hour cron jobs to 5m stagger", () => {
     const now = Date.parse("2026-02-08T10:00:00.000Z");

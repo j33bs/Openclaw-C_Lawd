@@ -62,6 +62,8 @@ export type CronRunOutcome = {
   error?: string;
   /** Optional classifier for execution errors to guide fallback behavior. */
   errorKind?: "delivery-target";
+  /** Optional evidence stamp for jobs that demonstrate usefulness on success. */
+  lastEvidenceDate?: string;
   summary?: string;
   sessionId?: string;
   sessionKey?: string;
@@ -140,6 +142,8 @@ export type CronJob = CronJobBase<
   CronDelivery,
   CronFailureAlert | false
 > & {
+  reviewDate?: string;
+  lastEvidenceDate?: string;
   state: CronJobState;
 };
 

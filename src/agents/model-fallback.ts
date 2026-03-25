@@ -243,7 +243,7 @@ function enforceTimeoutCooldownStateCap(): void {
 function getTimeoutCooldownRemainingMs(now: number, key: string): number {
   pruneTimeoutCooldownState(now);
   const until = timeoutCooldownUntil.get(key);
-  if (!Number.isFinite(until)) {
+  if (until === undefined || !Number.isFinite(until)) {
     return 0;
   }
   const remaining = until - now;

@@ -21,7 +21,11 @@ import type { ChannelKind } from "./config-reload-plan.js";
 import type { GatewayReloadPlan } from "./config-reload.js";
 import { resolveHooksConfig } from "./hooks.js";
 import { startBrowserControlServerIfEnabled } from "./server-browser.js";
-import { buildGatewayCronService, type GatewayCronState } from "./server-cron.js";
+import {
+  buildGatewayCronService,
+  ensureFlourishingCronJobs,
+  type GatewayCronState,
+} from "./server-cron.js";
 import type { HookClientIpConfig } from "./server-http.js";
 import { resolveHookClientIpConfig } from "./server/hooks.js";
 
@@ -37,6 +41,7 @@ type GatewayHotReloadState = {
 export function createGatewayReloadHandlers(params: {
   deps: CliDeps;
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
+  defaultWorkspaceDir: string;
   getState: () => GatewayHotReloadState;
   setState: (state: GatewayHotReloadState) => void;
   startChannel: (name: ChannelKind) => Promise<void>;
@@ -85,9 +90,15 @@ export function createGatewayReloadHandlers(params: {
         cfg: nextConfig,
         deps: params.deps,
         broadcast: params.broadcast,
+        workspaceDir: params.defaultWorkspaceDir,
       });
-      void nextState.cronState.cron
-        .start()
+      void ensureFlourishingCronJobs({
+        cron: nextState.cronState.cron,
+        workspaceDir: params.defaultWorkspaceDir,
+      })
+        .then(async () => {
+          await nextState.cronState.cron.start();
+        })
         .catch((err) => params.logCron.error(`failed to start: ${String(err)}`));
     }
 

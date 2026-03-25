@@ -11,11 +11,48 @@ const {
   loadConfigMock,
   fetchWithSsrFGuardMock,
   runCronIsolatedAgentTurnMock,
+  execFileMock,
+  writeTruthfulnessAuditSnapshotMock,
+  runFitnessCheckMock,
+  runSunsetCheckMock,
 } = vi.hoisted(() => ({
   enqueueSystemEventMock: vi.fn(),
   requestHeartbeatNowMock: vi.fn(),
   loadConfigMock: vi.fn(),
   fetchWithSsrFGuardMock: vi.fn(),
+  execFileMock: vi.fn(
+    (
+      _command: string,
+      _args: string[],
+      _options: { cwd: string; timeout: number; maxBuffer?: number; encoding?: string },
+      callback: (error: Error | null, stdout: string, stderr: string) => void,
+    ) => {
+      callback(
+        null,
+        JSON.stringify({
+          stale_count: 2,
+          blocked_count: 1,
+          output_path: "/tmp/proposals.json",
+        }),
+        "",
+      );
+    },
+  ),
+  writeTruthfulnessAuditSnapshotMock: vi.fn(async () => ({
+    checks: [],
+    passRate: 1,
+    failures: [],
+  })),
+  runFitnessCheckMock: vi.fn(async () => ({
+    ok: true as const,
+    report: {},
+    redSignals: [],
+    assessmentPath: "/tmp/fitness-assessment.json",
+  })),
+  runSunsetCheckMock: vi.fn(async () => ({
+    ok: true as const,
+    flaggedJobs: [],
+  })),
   runCronIsolatedAgentTurnMock: vi.fn(async () => ({ status: "ok" as const, summary: "ok" })),
 }));
 
@@ -47,11 +84,39 @@ vi.mock("../infra/net/fetch-guard.js", () => ({
   fetchWithSsrFGuard: fetchWithSsrFGuardMock,
 }));
 
+vi.mock("node:child_process", () => ({
+  execFile: execFileMock,
+}));
+
+vi.mock("../flourishing/truthfulness-audit.js", () => ({
+  writeTruthfulnessAuditSnapshot: writeTruthfulnessAuditSnapshotMock,
+}));
+
+vi.mock("../cron/jobs/fitness-check.js", () => ({
+  runFitnessCheck: runFitnessCheckMock,
+}));
+
+vi.mock("../cron/jobs/sunset-check.js", () => ({
+  runSunsetCheck: runSunsetCheckMock,
+}));
+
 vi.mock("../cron/isolated-agent.js", () => ({
   runCronIsolatedAgentTurn: runCronIsolatedAgentTurnMock,
 }));
 
-import { buildGatewayCronService } from "./server-cron.js";
+import { buildGatewayCronService, ensureFlourishingCronJobs } from "./server-cron.js";
+
+const FLOURISHING_BUILTIN_MESSAGES = {
+  truthfulnessAudit: "__builtin__:truthfulness-audit",
+  fitnessSweep: "__builtin__:fitness-sweep",
+  sunsetCheck: "__builtin__:sunset-check",
+} as const;
+
+function isFlourishingBuiltinMessage(message: string): boolean {
+  return Object.values(FLOURISHING_BUILTIN_MESSAGES).includes(
+    message as (typeof FLOURISHING_BUILTIN_MESSAGES)[keyof typeof FLOURISHING_BUILTIN_MESSAGES],
+  );
+}
 
 function createCronConfig(name: string): OpenClawConfig {
   const tmpDir = path.join(os.tmpdir(), `${name}-${Date.now()}`);
@@ -71,6 +136,10 @@ describe("buildGatewayCronService", () => {
     requestHeartbeatNowMock.mockClear();
     loadConfigMock.mockClear();
     fetchWithSsrFGuardMock.mockClear();
+    execFileMock.mockClear();
+    writeTruthfulnessAuditSnapshotMock.mockClear();
+    runFitnessCheckMock.mockClear();
+    runSunsetCheckMock.mockClear();
     runCronIsolatedAgentTurnMock.mockClear();
   });
 
@@ -192,6 +261,74 @@ describe("buildGatewayCronService", () => {
           sessionKey: "project-alpha-monitor",
         }),
       );
+    } finally {
+      state.cron.stop();
+    }
+  });
+
+  it("seeds built-in flourishing jobs and records lastEvidenceDate on success", async () => {
+    const cfg = createCronConfig("server-cron-flourishing");
+    loadConfigMock.mockReturnValue(cfg);
+    const workspaceDir = path.dirname(cfg.cron!.store!);
+
+    const state = buildGatewayCronService({
+      cfg,
+      deps: {} as CliDeps,
+      broadcast: () => {},
+      workspaceDir,
+    });
+    try {
+      await ensureFlourishingCronJobs({
+        cron: state.cron,
+        workspaceDir,
+        timezone: "UTC",
+        nowMs: Date.UTC(2026, 2, 25, 12, 0, 0),
+      });
+
+      const seededJobs = await state.cron.list({ includeDisabled: true });
+      const builtinJobs = seededJobs.filter(
+        (job) =>
+          job.payload.kind === "agentTurn" && isFlourishingBuiltinMessage(job.payload.message),
+      );
+
+      expect(builtinJobs).toHaveLength(3);
+      expect(
+        builtinJobs.map((job) => ({
+          name: job.name,
+          message: job.payload.kind === "agentTurn" ? job.payload.message : "",
+          reviewDate: job.reviewDate,
+        })),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "Flourishing Truthfulness Audit",
+            message: FLOURISHING_BUILTIN_MESSAGES.truthfulnessAudit,
+            reviewDate: "2026-04-24",
+          }),
+          expect.objectContaining({
+            name: "Flourishing Fitness Sweep",
+            message: FLOURISHING_BUILTIN_MESSAGES.fitnessSweep,
+            reviewDate: "2026-04-24",
+          }),
+          expect.objectContaining({
+            name: "Flourishing Sunset Check",
+            message: FLOURISHING_BUILTIN_MESSAGES.sunsetCheck,
+            reviewDate: "2026-04-24",
+          }),
+        ]),
+      );
+
+      for (const job of builtinJobs) {
+        await state.cron.run(job.id, "force");
+        const updated = state.cron.getJob(job.id);
+        expect(updated?.lastEvidenceDate).toBe("2026-03-25");
+      }
+
+      expect(writeTruthfulnessAuditSnapshotMock).toHaveBeenCalledOnce();
+      expect(runFitnessCheckMock).toHaveBeenCalledOnce();
+      expect(runSunsetCheckMock).toHaveBeenCalledOnce();
+      expect(execFileMock).toHaveBeenCalledOnce();
+      expect(runCronIsolatedAgentTurnMock).not.toHaveBeenCalled();
     } finally {
       state.cron.stop();
     }

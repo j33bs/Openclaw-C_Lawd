@@ -1,3 +1,5 @@
+import type { TactiSnapshot } from "../flourishing/tacti-state.js";
+
 export type MeaningDensityScore = {
   score: number;
   verdict: "low" | "medium" | "high";
@@ -24,6 +26,14 @@ export type ResponseModeInput = {
   irreversibleAction?: boolean;
   collapseRisk?: boolean;
   relationalStrain?: boolean;
+  recallSensitive?: boolean;
+  continuityConfidence?: "full" | "partial" | "minimal";
+  tactiSnapshot?: TactiSnapshot | null;
+};
+
+export type ResponseModeRecommendation = {
+  mode: ResponseMode;
+  reasons: string[];
 };
 
 export type RepairLoopSignals = {
@@ -46,6 +56,10 @@ export type FlourishingPromptConfig = {
   };
   repairLoop?: {
     enabled?: boolean;
+  };
+  liveSignals?: {
+    continuityConfidence?: "full" | "partial" | "minimal";
+    tactiSnapshot?: TactiSnapshot | null;
   };
 };
 
@@ -99,26 +113,52 @@ export function scoreMeaningDensity(input: MeaningDensityInput): MeaningDensityS
   return { score: rounded, verdict, reasons };
 }
 
-export function recommendResponseMode(input: ResponseModeInput): ResponseMode {
+export function recommendResponseMode(input: ResponseModeInput): ResponseModeRecommendation {
+  const reasons: string[] = [];
+  let mode: ResponseMode;
   if (input.relationalStrain) {
-    return "repair";
+    mode = "repair";
+    reasons.push("relational strain detected");
+  } else if (input.collapseRisk) {
+    mode = "agency_first";
+    reasons.push("collapse risk detected");
+  } else if ((input.repeatedFailures ?? 0) >= 2) {
+    mode = "agency_first";
+    reasons.push("repeated failures suggest narrowing");
+  } else if (input.userUncertainty) {
+    mode = "agency_first";
+    reasons.push("user uncertainty suggests narrowing");
+  } else if (input.irreversibleAction) {
+    mode = "agency_first";
+    reasons.push("irreversible action suggests extra preflight");
+  } else if (input.asksForDelegation) {
+    mode = "tight_execute";
+    reasons.push("delegation requested and intent is clear");
+  } else {
+    mode = "tight_execute";
   }
-  if (input.collapseRisk) {
-    return "agency_first";
+
+  if (input.continuityConfidence === "minimal" && input.recallSensitive) {
+    reasons.push(
+      "continuity confidence is minimal — prefer stating uncertainty over confabulating",
+    );
   }
-  if ((input.repeatedFailures ?? 0) >= 2) {
-    return "agency_first";
+
+  const tactiSnapshot = input.tactiSnapshot;
+  if (tactiSnapshot && !tactiSnapshot.stale) {
+    if (tactiSnapshot.trustScore < 0.5) {
+      mode = "repair";
+      reasons.push("low trust score — prefer repair mode");
+    } else if (tactiSnapshot.arousal > 0.8) {
+      mode = "tight_execute";
+      reasons.push("high arousal detected — prefer shorter, calmer responses");
+    }
+    if (tactiSnapshot.unresolvedThreads.length > 3) {
+      reasons.push("multiple unresolved threads — consider surfacing them");
+    }
   }
-  if (input.userUncertainty) {
-    return "agency_first";
-  }
-  if (input.irreversibleAction) {
-    return "agency_first";
-  }
-  if (input.asksForDelegation) {
-    return "tight_execute";
-  }
-  return "tight_execute";
+
+  return { mode, reasons };
 }
 
 export function shouldOpenRepairLoop(signals: RepairLoopSignals): boolean {
@@ -167,6 +207,17 @@ export function buildFlourishingPromptSection(config?: FlourishingPromptConfig):
       "- Repair-loop hook: if the interaction shows strain, overreach, or mismatch, stop escalating and briefly repair.",
       "- Repair shape: name the mismatch in one sentence, own the likely miss, restate the user's apparent aim, and offer one corrected next step.",
       "- Do not use repair language as theatre; only invoke it when it changes the next move.",
+    );
+  }
+
+  const continuityConfidence = config.liveSignals?.continuityConfidence;
+  if (continuityConfidence) {
+    lines.push(`- Live continuity signal: ${continuityConfidence}.`);
+  }
+  const tactiSnapshot = config.liveSignals?.tactiSnapshot;
+  if (tactiSnapshot && !tactiSnapshot.stale) {
+    lines.push(
+      `- Live TACTI signal: arousal ${tactiSnapshot.arousal.toFixed(2)}, trust ${tactiSnapshot.trustScore.toFixed(2)}, attunement ${tactiSnapshot.attunementIndex.toFixed(2)}, unresolved threads ${tactiSnapshot.unresolvedThreads.length}.`,
     );
   }
 

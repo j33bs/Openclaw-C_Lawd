@@ -88,7 +88,6 @@ describe("worklog capture", () => {
         chatType: "group",
         senderIsOwner: true,
         toolSummaries: ["apply_patch: foo.ts"],
-        outcome: "done",
       }),
     ).toBe(false);
     expect(
@@ -97,7 +96,6 @@ describe("worklog capture", () => {
         chatType: "direct",
         senderIsOwner: false,
         toolSummaries: ["apply_patch: foo.ts"],
-        outcome: "done",
       }),
     ).toBe(false);
   });

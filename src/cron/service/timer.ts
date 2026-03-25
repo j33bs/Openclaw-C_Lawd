@@ -299,6 +299,7 @@ export function applyJobResult(
     status: CronRunStatus;
     error?: string;
     delivered?: boolean;
+    lastEvidenceDate?: string;
     startedAt: number;
     endedAt: number;
   },
@@ -323,6 +324,10 @@ export function applyJobResult(
   job.state.lastStatus = result.status;
   job.state.lastDurationMs = Math.max(0, result.endedAt - result.startedAt);
   job.state.lastError = result.error;
+  if (result.status === "ok" && typeof result.lastEvidenceDate === "string") {
+    const lastEvidenceDate = result.lastEvidenceDate.trim();
+    job.lastEvidenceDate = lastEvidenceDate || undefined;
+  }
   job.state.lastErrorReason =
     result.status === "error" && typeof result.error === "string"
       ? (resolveFailoverReasonFromError(result.error) ?? undefined)
@@ -492,6 +497,7 @@ function applyOutcomeToStoredJob(state: CronServiceState, result: TimedCronRunOu
     status: result.status,
     error: result.error,
     delivered: result.delivered,
+    lastEvidenceDate: result.lastEvidenceDate,
     startedAt: result.startedAt,
     endedAt: result.endedAt,
   });
@@ -933,6 +939,7 @@ async function runStartupCatchupCandidate(
       jobId: candidate.jobId,
       status: result.status,
       error: result.error,
+      lastEvidenceDate: result.lastEvidenceDate,
       summary: result.summary,
       delivered: result.delivered,
       sessionId: result.sessionId,
@@ -1143,6 +1150,7 @@ export async function executeJobCore(
   return {
     status: res.status,
     error: res.error,
+    lastEvidenceDate: res.lastEvidenceDate,
     summary: res.summary,
     delivered: res.delivered,
     deliveryAttempted: res.deliveryAttempted,
@@ -1188,6 +1196,7 @@ export async function executeJob(
     status: coreResult.status,
     error: coreResult.error,
     delivered: coreResult.delivered,
+    lastEvidenceDate: coreResult.lastEvidenceDate,
     startedAt,
     endedAt,
   });

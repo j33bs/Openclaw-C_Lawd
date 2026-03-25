@@ -457,7 +457,7 @@ function createTelegramRequestWithDiag(params: {
   account: ResolvedTelegramAccount;
   retry?: RetryConfig;
   verbose?: boolean;
-  shouldRetry?: (err: unknown) => boolean;
+  shouldRetry?: (err: unknown, attempt: number) => boolean;
   /** When true, the shouldRetry predicate is used exclusively without the TELEGRAM_RETRY_RE fallback. */
   strictShouldRetry?: boolean;
   useApiErrorLogging?: boolean;

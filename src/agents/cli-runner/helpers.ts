@@ -7,6 +7,7 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { CliBackendConfig } from "../../config/types.js";
+import type { ContinuityBundle } from "../../memory/continuity-bundle.js";
 import { KeyedAsyncQueue } from "../../plugin-sdk/keyed-async-queue.js";
 import { buildTtsSystemPromptHint } from "../../tts/tts.js";
 import { isRecord } from "../../utils.js";
@@ -41,6 +42,10 @@ export type CliOutput = {
 export function buildSystemPrompt(params: {
   workspaceDir: string;
   config?: OpenClawConfig;
+  flourishingPromptConfig?: import("../flourishing-response-shaping.js").FlourishingPromptConfig;
+  continuityBundle?: ContinuityBundle;
+  fragmentationLine?: string;
+  systemStateLine?: string;
   defaultThinkLevel?: ThinkLevel;
   extraSystemPrompt?: string;
   ownerNumbers?: string[];
@@ -75,6 +80,10 @@ export function buildSystemPrompt(params: {
   const ownerDisplay = resolveOwnerDisplaySetting(params.config);
   return buildAgentSystemPrompt({
     workspaceDir: params.workspaceDir,
+    flourishingPromptConfig: params.flourishingPromptConfig,
+    continuityBundle: params.continuityBundle,
+    fragmentationLine: params.fragmentationLine,
+    systemStateLine: params.systemStateLine,
     defaultThinkLevel: params.defaultThinkLevel,
     extraSystemPrompt: params.extraSystemPrompt,
     ownerNumbers: params.ownerNumbers,

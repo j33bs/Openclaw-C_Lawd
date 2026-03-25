@@ -685,6 +685,18 @@ describe("buildAgentSystemPrompt", () => {
         meaningDensity: { enabled: true, executionMinScore: 2 },
         responseMode: { enabled: true, defaultMode: "agency_first", collapseFailureThreshold: 2 },
         repairLoop: { enabled: true },
+        liveSignals: {
+          continuityConfidence: "partial",
+          tactiSnapshot: {
+            arousal: 0.42,
+            trustScore: 0.73,
+            attunementIndex: 0.61,
+            interactionCount: 9,
+            unresolvedThreads: ["one", "two"],
+            lastUpdated: "2026-03-25T00:00:00.000Z",
+            stale: false,
+          },
+        },
       },
     });
 
@@ -692,6 +704,35 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("Meaning-density preflight");
     expect(prompt).toContain("Agency-first mode means");
     expect(prompt).toContain("Repair-loop hook");
+    expect(prompt).toContain("Live continuity signal: partial.");
+    expect(prompt).toContain(
+      "Live TACTI signal: arousal 0.42, trust 0.73, attunement 0.61, unresolved threads 2.",
+    );
+  });
+
+  it("includes direct continuity, fragmentation, and system state signals when provided", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      continuityBundle: {
+        confidence: "partial",
+        assembledAt: "2026-03-25T00:00:00.000Z",
+        entries: [
+          {
+            kind: "daily-note",
+            source: "memory/2026-03-25.md",
+            date: "2026-03-25",
+            content: "# Today\n- keep continuity grounded\n",
+          },
+        ],
+      },
+      fragmentationLine: "Fragmentation risk: 0.12 (low).",
+      systemStateLine: "System health: stable; truthfulness audit fresh.",
+    });
+
+    expect(prompt).toContain("## Recent Context [confidence: partial]");
+    expect(prompt).toContain("### Today (2026-03-25)");
+    expect(prompt).toContain("Fragmentation risk: 0.12 (low).");
+    expect(prompt).toContain("System health: stable; truthfulness audit fresh.");
   });
 });
 

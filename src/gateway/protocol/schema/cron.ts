@@ -74,6 +74,8 @@ const CronCommonOptionalFields = {
   agentId: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
   sessionKey: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
   description: Type.Optional(Type.String()),
+  reviewDate: Type.Optional(Type.String()),
+  lastEvidenceDate: Type.Optional(Type.String()),
   enabled: Type.Optional(Type.Boolean()),
   deleteAfterRun: Type.Optional(Type.Boolean()),
 };
@@ -251,6 +253,8 @@ export const CronJobSchema = Type.Object(
     sessionKey: Type.Optional(NonEmptyString),
     name: NonEmptyString,
     description: Type.Optional(Type.String()),
+    reviewDate: Type.Optional(Type.String()),
+    lastEvidenceDate: Type.Optional(Type.String()),
     enabled: Type.Boolean(),
     deleteAfterRun: Type.Optional(Type.Boolean()),
     createdAtMs: Type.Integer({ minimum: 0 }),

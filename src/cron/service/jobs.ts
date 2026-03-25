@@ -546,6 +546,8 @@ export function createJob(state: CronServiceState, input: CronJobCreate): CronJo
     sessionKey: normalizeOptionalSessionKey((input as { sessionKey?: unknown }).sessionKey),
     name: normalizeRequiredName(input.name),
     description: normalizeOptionalText(input.description),
+    reviewDate: normalizeOptionalText(input.reviewDate),
+    lastEvidenceDate: normalizeOptionalText(input.lastEvidenceDate),
     enabled,
     deleteAfterRun,
     createdAtMs: now,
@@ -578,6 +580,12 @@ export function applyJobPatch(
   }
   if ("description" in patch) {
     job.description = normalizeOptionalText(patch.description);
+  }
+  if ("reviewDate" in patch) {
+    job.reviewDate = normalizeOptionalText(patch.reviewDate);
+  }
+  if ("lastEvidenceDate" in patch) {
+    job.lastEvidenceDate = normalizeOptionalText(patch.lastEvidenceDate);
   }
   if (typeof patch.enabled === "boolean") {
     job.enabled = patch.enabled;
