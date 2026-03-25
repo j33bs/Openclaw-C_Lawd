@@ -15,6 +15,15 @@ export function buildEmbeddedSystemPrompt(params: {
   continuityBundle?: ContinuityBundle;
   fragmentationLine?: string;
   systemStateLine?: string;
+  conversationContext?: {
+    surface?: string;
+    kind?: string;
+    topic?: string | number;
+    shared?: boolean;
+    direct?: boolean;
+    conversationId?: string;
+  };
+  contextHealthLine?: string;
   defaultThinkLevel?: ThinkLevel;
   reasoningLevel?: ReasoningLevel;
   extraSystemPrompt?: string;
@@ -64,6 +73,8 @@ export function buildEmbeddedSystemPrompt(params: {
     continuityBundle: params.continuityBundle,
     fragmentationLine: params.fragmentationLine,
     systemStateLine: params.systemStateLine,
+    conversationContext: params.conversationContext,
+    contextHealthLine: params.contextHealthLine,
     defaultThinkLevel: params.defaultThinkLevel,
     reasoningLevel: params.reasoningLevel,
     extraSystemPrompt: params.extraSystemPrompt,

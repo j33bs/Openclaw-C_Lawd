@@ -734,6 +734,47 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("Fragmentation risk: 0.12 (low).");
     expect(prompt).toContain("System health: stable; truthfulness audit fresh.");
   });
+
+  it("renders conversation-shape metadata and a context-health line when provided", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      conversationContext: {
+        surface: "telegram",
+        kind: "group",
+        topic: 42,
+        shared: true,
+        direct: false,
+        conversationId: "-1001234567890:topic:42",
+      },
+      contextHealthLine: "recall degraded; continuity partial; TACTI stale",
+    });
+
+    expect(prompt).toContain("## Conversation Context");
+    expect(prompt).toContain("Surface: telegram");
+    expect(prompt).toContain("Kind: group");
+    expect(prompt).toContain("Topic: 42");
+    expect(prompt).toContain("Conversation ID: -1001234567890:topic:42");
+    expect(prompt).toContain("Shared: yes");
+    expect(prompt).toContain("Direct: no");
+    expect(prompt).toContain("## Context Health");
+    expect(prompt).toContain("Context health: recall degraded; continuity partial; TACTI stale");
+  });
+
+  it("derives shared/direct flags from conversation kind when explicit flags are absent", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      conversationContext: {
+        surface: "telegram",
+        kind: "direct",
+      },
+    });
+
+    expect(prompt).toContain("## Conversation Context");
+    expect(prompt).toContain("Surface: telegram");
+    expect(prompt).toContain("Kind: direct");
+    expect(prompt).toContain("Shared: no");
+    expect(prompt).toContain("Direct: yes");
+  });
 });
 
 describe("buildSubagentSystemPrompt", () => {

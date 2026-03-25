@@ -14,6 +14,8 @@ export interface ContinuityBundle {
   entries: ContinuityBundleEntry[];
   assembledAt: string;
   confidence: "full" | "partial" | "minimal";
+  timeZone?: string;
+  issues?: string[];
 }
 
 export interface AssembleContinuityBundleParams {
@@ -24,6 +26,7 @@ export interface AssembleContinuityBundleParams {
   };
   query?: string;
   maxTokens?: number;
+  timeZone?: string;
 }
 
 type SearchResultLike = {
@@ -36,13 +39,44 @@ type SearchResultLike = {
 };
 
 const DEFAULT_MAX_TOKENS = 400;
-const DEFAULT_TIME_ZONE = "Australia/Brisbane";
+const TOKEN_SPLIT_RE =
+  /(\p{Extended_Pictographic}|\p{Letter}[\p{Letter}\p{Mark}\p{Number}'’_-]*|\p{Number}+|[^\s])/gu;
 
-function getDateParts(now: Date = new Date()): { today: string; yesterday: string } {
+function resolveTimeZone(candidate?: string): { timeZone: string; issue?: string } {
+  const trimmed = candidate?.trim();
+  if (trimmed) {
+    try {
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: trimmed,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+      return { timeZone: trimmed };
+    } catch {
+      return {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        issue: `Invalid requested timezone "${trimmed}"; using the system timezone instead.`,
+      };
+    }
+  }
+
+  return {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  };
+}
+
+function getDateParts(
+  now: Date = new Date(),
+  timeZone = resolveTimeZone().timeZone,
+): {
+  today: string;
+  yesterday: string;
+} {
   try {
     const formatDate = (date: Date) => {
       const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: DEFAULT_TIME_ZONE,
+        timeZone,
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -88,16 +122,18 @@ function approximateTokenCount(text: string): number {
   if (!trimmed) {
     return 0;
   }
-  return trimmed.split(/\s+/u).length;
+  const matches = trimmed.match(TOKEN_SPLIT_RE);
+  return matches?.length ?? 0;
 }
 
 function trimToApproxTokens(text: string, maxTokens: number): string {
   const limit = Math.max(1, Math.floor(maxTokens));
-  const words = text.trim().split(/\s+/u);
-  if (words.length <= limit) {
-    return text.trim();
+  const trimmed = text.trim();
+  const tokens = trimmed.match(TOKEN_SPLIT_RE) ?? [];
+  if (tokens.length <= limit) {
+    return trimmed;
   }
-  return `${words.slice(0, limit).join(" ")} ...`;
+  return `${tokens.slice(0, limit).join(" ")} ...`;
 }
 
 async function readOptionalText(filePath: string): Promise<string | null> {
@@ -183,7 +219,12 @@ export async function assembleContinuityBundle(
 ): Promise<ContinuityBundle> {
   const assembledAt = new Date().toISOString();
   const workspaceDir = path.resolve(params.workspaceDir);
-  const { today, yesterday } = getDateParts();
+  const resolvedTimeZone = resolveTimeZone(params.timeZone);
+  const issues: string[] = [];
+  if (resolvedTimeZone.issue) {
+    issues.push(resolvedTimeZone.issue);
+  }
+  const { today, yesterday } = getDateParts(undefined, resolvedTimeZone.timeZone);
   const requestedMaxTokens = Math.max(1, Math.floor(params.maxTokens ?? DEFAULT_MAX_TOKENS));
 
   const entries: ContinuityBundleEntry[] = [];
@@ -302,7 +343,7 @@ export async function assembleContinuityBundle(
       }
       entries.push(...semanticEntries);
     } catch {
-      // Semantic recall is optional; local reads are the primary path.
+      issues.push("Semantic recall was unavailable for this turn; using local continuity only.");
     }
   }
 
@@ -311,6 +352,13 @@ export async function assembleContinuityBundle(
   const hasAnyLocal = hasToday || yesterdayContent !== null || hasPinned;
   const confidence: ContinuityBundle["confidence"] =
     hasToday && hasPinned ? "full" : hasAnyLocal ? "partial" : "minimal";
+
+  if (!hasToday) {
+    issues.push(`Today's daily note was not found for timezone ${resolvedTimeZone.timeZone}.`);
+  }
+  if (!hasPinned) {
+    issues.push("Pinned doctrine was not found.");
+  }
 
   const perEntryBudget = Math.max(12, Math.floor(requestedMaxTokens / Math.max(1, entries.length)));
   const trimmedEntries = entries.map((entry) => ({
@@ -325,5 +373,7 @@ export async function assembleContinuityBundle(
     entries: trimmedEntries,
     assembledAt,
     confidence,
+    timeZone: resolvedTimeZone.timeZone,
+    issues,
   };
 }

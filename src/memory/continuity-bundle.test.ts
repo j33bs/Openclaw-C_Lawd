@@ -94,6 +94,24 @@ describe("assembleContinuityBundle", () => {
     expect(bundle.entries[0]?.date).toBe("2026-03-25");
   });
 
+  it("honors a configured timezone when selecting today's note", async () => {
+    await writeWorkspaceFile({
+      dir: workspaceDir,
+      name: "memory/2026-03-24.md",
+      content: "# Today elsewhere\n- timezone-sensitive note\n",
+    });
+
+    const bundle = await assembleContinuityBundle({
+      workspaceDir,
+      timeZone: "America/Los_Angeles",
+    });
+
+    expect(bundle.timeZone).toBe("America/Los_Angeles");
+    expect(bundle.confidence).toBe("partial");
+    expect(bundle.entries).toHaveLength(1);
+    expect(bundle.entries[0]?.date).toBe("2026-03-24");
+  });
+
   it("returns minimal confidence when local sources are absent", async () => {
     const memoryManager = createMockMemoryManager([
       {
@@ -112,6 +130,27 @@ describe("assembleContinuityBundle", () => {
     expect(bundle.confidence).toBe("minimal");
     expect(bundle.entries).toHaveLength(1);
     expect(bundle.entries[0]?.kind).toBe("session-snippet");
+  });
+
+  it("records semantic recall failures in bundle issues", async () => {
+    const memoryManager = {
+      searchKeyword: vi.fn().mockRejectedValue(new Error("semantic search down")),
+    };
+
+    const bundle = await assembleContinuityBundle({
+      workspaceDir,
+      memoryManager,
+      query: "support",
+    });
+
+    expect(bundle.confidence).toBe("minimal");
+    expect(bundle.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Semantic recall was unavailable for this turn"),
+        expect.stringContaining("Today's daily note was not found"),
+        expect.stringContaining("Pinned doctrine was not found"),
+      ]),
+    );
   });
 
   it("skips semantic search when no query is provided", async () => {
@@ -140,6 +179,22 @@ describe("assembleContinuityBundle", () => {
 
     expect(bundle.entries[0]?.content.length).toBeLessThan(longContent.length);
     expect(bundle.entries[0]?.content).toContain("...");
+  });
+
+  it("trims punctuation-heavy text using token boundaries, not whitespace only", async () => {
+    await writeWorkspaceFile({
+      dir: workspaceDir,
+      name: "memory/2026-03-25.md",
+      content: "alpha,beta,gamma",
+    });
+
+    const bundle = await assembleContinuityBundle({
+      workspaceDir,
+      maxTokens: 1,
+    });
+
+    expect(bundle.entries[0]?.content).toContain("...");
+    expect(bundle.entries[0]?.content).not.toBe("alpha,beta,gamma");
   });
 
   it("does not throw when file reads fail", async () => {

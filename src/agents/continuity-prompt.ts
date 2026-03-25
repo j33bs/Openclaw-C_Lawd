@@ -50,11 +50,31 @@ function formatLabel(entry: ContinuityBundle["entries"][number]): string {
   return entry.source;
 }
 
+function buildRecallHealthLines(bundle: ContinuityBundle): string[] {
+  const lines: string[] = [];
+  if (bundle.timeZone) {
+    lines.push(`Timezone: ${bundle.timeZone}.`);
+  }
+  if ((bundle.issues ?? []).length === 0) {
+    return lines;
+  }
+  if (lines.length > 0) {
+    lines.push("");
+  }
+  lines.push("### Recall Health");
+  for (const issue of bundle.issues ?? []) {
+    lines.push(`- ${issue}`);
+  }
+  return lines;
+}
+
 export function buildContinuityPromptSection(bundle: ContinuityBundle): string {
+  const healthLines = buildRecallHealthLines(bundle);
   if (bundle.confidence === "minimal" || bundle.entries.length === 0) {
     return [
       "## Recent Context [confidence: minimal]",
       "Recent daily notes and pinned doctrine were not found. State uncertainty explicitly when answering questions about recent work.",
+      ...healthLines,
     ].join("\n");
   }
 
@@ -66,6 +86,7 @@ export function buildContinuityPromptSection(bundle: ContinuityBundle): string {
   const related = bundle.entries.filter((entry) => entry.kind === "session-snippet");
 
   const lines = [`## Recent Context [confidence: ${bundle.confidence}]`];
+  lines.push(...healthLines);
 
   if (today) {
     lines.push("", `### Today (${today.date ?? ""})`.trim(), excerptMarkdown(today.content, 135));

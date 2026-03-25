@@ -19,6 +19,15 @@ import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
  */
 export type PromptMode = "full" | "minimal" | "none";
 type OwnerIdDisplay = "raw" | "hash";
+type ConversationContextShape = {
+  surface?: string;
+  kind?: string;
+  topic?: string | number;
+  shared?: boolean;
+  direct?: boolean;
+  conversationId?: string;
+  threadId?: string | number;
+};
 
 function buildSkillsSection(params: { skillsPrompt?: string; readToolName: string }) {
   const trimmed = params.skillsPrompt?.trim();
@@ -102,6 +111,63 @@ function buildTimeSection(params: { userTimezone?: string }) {
     return [];
   }
   return ["## Current Date & Time", `Time zone: ${params.userTimezone}`, ""];
+}
+
+function buildConversationContextSection(params: {
+  conversationContext?: ConversationContextShape;
+  runtimeChannel?: string;
+}) {
+  const context = params.conversationContext;
+  if (!context) {
+    return [];
+  }
+
+  const kind = context.kind?.trim().toLowerCase();
+  const surface = context.surface?.trim() || params.runtimeChannel?.trim() || "";
+  const topic = context.topic ?? context.threadId;
+  const conversationId = context.conversationId?.trim();
+  const derivedDirect =
+    typeof context.direct === "boolean"
+      ? context.direct
+      : kind
+        ? ["direct", "dm", "private"].includes(kind)
+        : undefined;
+  const derivedShared =
+    typeof context.shared === "boolean"
+      ? context.shared
+      : kind
+        ? !["direct", "dm", "private"].includes(kind)
+        : undefined;
+
+  const lines = ["## Conversation Context"];
+  if (surface) {
+    lines.push(`Surface: ${surface}`);
+  }
+  if (kind) {
+    lines.push(`Kind: ${kind}`);
+  }
+  if (topic !== undefined && `${topic}`.trim()) {
+    lines.push(`Topic: ${topic}`);
+  }
+  if (conversationId) {
+    lines.push(`Conversation ID: ${conversationId}`);
+  }
+  if (typeof derivedShared === "boolean") {
+    lines.push(`Shared: ${derivedShared ? "yes" : "no"}`);
+  }
+  if (typeof derivedDirect === "boolean") {
+    lines.push(`Direct: ${derivedDirect ? "yes" : "no"}`);
+  }
+  lines.push("");
+  return lines;
+}
+
+function buildContextHealthSection(params: { contextHealthLine?: string }) {
+  const line = params.contextHealthLine?.trim();
+  if (!line) {
+    return [];
+  }
+  return ["## Context Health", `Context health: ${line}`, ""];
 }
 
 function buildReplyTagsSection(isMinimal: boolean) {
@@ -209,6 +275,8 @@ export function buildAgentSystemPrompt(params: {
   userTime?: string;
   userTimeFormat?: ResolvedTimeFormat;
   contextFiles?: EmbeddedContextFile[];
+  conversationContext?: ConversationContextShape;
+  contextHealthLine?: string;
   skillsPrompt?: string;
   heartbeatPrompt?: string;
   docsPath?: string;
@@ -420,6 +488,13 @@ export function buildAgentSystemPrompt(params: {
     isMinimal,
     readToolName,
   });
+  const conversationContextSection = buildConversationContextSection({
+    conversationContext: params.conversationContext,
+    runtimeChannel,
+  });
+  const contextHealthSection = buildContextHealthSection({
+    contextHealthLine: params.contextHealthLine,
+  });
   const flourishingSection = buildFlourishingPromptSection(params.flourishingPromptConfig);
   const continuitySection = params.continuityBundle
     ? [buildContinuityPromptSection(params.continuityBundle), ""]
@@ -577,6 +652,8 @@ export function buildAgentSystemPrompt(params: {
     ...buildTimeSection({
       userTimezone,
     }),
+    ...conversationContextSection,
+    ...contextHealthSection,
     ...flourishingSection,
     ...continuitySection,
     params.fragmentationLine?.trim() ? params.fragmentationLine.trim() : "",

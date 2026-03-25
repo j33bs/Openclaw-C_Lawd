@@ -1263,6 +1263,143 @@ export function resolvePromptModeForSession(sessionKey?: string): "minimal" | "f
   return isSubagentSessionKey(sessionKey) || isCronSessionKey(sessionKey) ? "minimal" : "full";
 }
 
+export type EmbeddedConversationContext = {
+  surface?: string;
+  kind?: string;
+  topic?: string | number;
+  shared?: boolean;
+  direct?: boolean;
+  conversationId?: string;
+};
+
+type EmbeddedFlourishingContextMode = "disabled" | "full-owner" | "shared-safe";
+
+export function buildEmbeddedConversationContext(params: {
+  runtimeChannel?: string;
+  groupId?: string | null;
+  messageTo?: string;
+  messageThreadId?: string | number;
+}): EmbeddedConversationContext | undefined {
+  const surface = params.runtimeChannel?.trim().toLowerCase();
+  if (!surface) {
+    return undefined;
+  }
+  const groupId = params.groupId?.trim();
+  const messageTo = params.messageTo?.trim();
+  const topic =
+    params.messageThreadId ??
+    (() => {
+      const match = messageTo?.match(/:topic:([^:]+)$/u);
+      const value = match?.[1]?.trim();
+      return value ? value : undefined;
+    })();
+  const conversationId = messageTo || groupId || undefined;
+  const isShared = Boolean(groupId);
+
+  if (surface !== "telegram") {
+    return {
+      surface,
+      kind: isShared ? "shared" : "direct",
+      ...(topic !== undefined ? { topic } : {}),
+      shared: isShared,
+      direct: !isShared,
+      ...(conversationId ? { conversationId } : {}),
+    };
+  }
+
+  const looksSupergroup = Boolean(groupId && /^-100\d+$/u.test(groupId));
+  const kind = isShared
+    ? topic !== undefined
+      ? looksSupergroup
+        ? "supergroup topic"
+        : "group topic"
+      : looksSupergroup
+        ? "supergroup"
+        : "group"
+    : topic !== undefined
+      ? "dm topic"
+      : "direct";
+
+  return {
+    surface,
+    kind,
+    ...(topic !== undefined ? { topic } : {}),
+    shared: isShared,
+    direct: !isShared,
+    ...(conversationId ? { conversationId } : {}),
+  };
+}
+
+export function resolveEmbeddedFlourishingContextMode(params: {
+  promptMode: "minimal" | "full";
+  trigger?: string;
+  runtimeChannel?: string;
+  groupId?: string | null;
+  senderIsOwner?: boolean;
+}): {
+  mode: EmbeddedFlourishingContextMode;
+  reasons: string[];
+} {
+  const reasons: string[] = [];
+  if (params.promptMode !== "full") {
+    return { mode: "disabled", reasons: ["minimal prompt mode"] };
+  }
+  if (params.trigger !== "user") {
+    return { mode: "disabled", reasons: ["non-user trigger"] };
+  }
+
+  const runtimeChannel = params.runtimeChannel?.trim().toLowerCase();
+  const isSharedSurface = Boolean(params.groupId?.trim());
+  if (runtimeChannel === "telegram") {
+    if (!isSharedSurface && params.senderIsOwner === true) {
+      return { mode: "full-owner", reasons };
+    }
+    if (isSharedSurface) {
+      reasons.push("shared Telegram surface");
+    }
+    if (params.senderIsOwner === false) {
+      reasons.push("sender not owner-verified");
+    } else if (!isSharedSurface && params.senderIsOwner !== true) {
+      reasons.push("sender ownership unknown");
+    }
+    return { mode: "shared-safe", reasons };
+  }
+
+  if (!isSharedSurface && params.senderIsOwner === true) {
+    return { mode: "full-owner", reasons };
+  }
+  if (isSharedSurface) {
+    reasons.push("shared surface");
+  }
+  if (params.senderIsOwner === false) {
+    reasons.push("sender not owner-verified");
+  } else if (params.senderIsOwner !== true) {
+    reasons.push("sender ownership unknown");
+  }
+  return { mode: "disabled", reasons };
+}
+
+export function buildEmbeddedContextHealthSummary(params: {
+  mode: EmbeddedFlourishingContextMode;
+  reasons?: string[];
+  issues?: string[];
+}): string | undefined {
+  const details = [...(params.reasons ?? []), ...(params.issues ?? [])]
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  if (params.mode === "full-owner" && details.length === 0) {
+    return undefined;
+  }
+  const prefix =
+    params.mode === "shared-safe"
+      ? "shared-safe context"
+      : params.mode === "disabled"
+        ? "context unavailable"
+        : "context degraded";
+  return details.length > 0 ? `${prefix}; ${details.join("; ")}` : prefix;
+}
+
 export function resolveAttemptFsWorkspaceOnly(params: {
   config?: OpenClawConfig;
   sessionAgentId: string;
@@ -1699,50 +1836,146 @@ export async function runEmbeddedAttempt(
     const heartbeatPrompt = isDefaultAgent
       ? resolveHeartbeatPrompt(params.config?.agents?.defaults?.heartbeat?.prompt)
       : undefined;
-    const includeFlourishingContext =
-      promptMode === "full" &&
-      params.trigger === "user" &&
-      !params.groupId &&
-      params.senderIsOwner === true;
+    const conversationContext = buildEmbeddedConversationContext({
+      runtimeChannel,
+      groupId: params.groupId,
+      messageTo: params.messageTo,
+      messageThreadId: params.messageThreadId,
+    });
+    const flourishingContext = resolveEmbeddedFlourishingContextMode({
+      promptMode,
+      trigger: params.trigger,
+      runtimeChannel,
+      groupId: params.groupId,
+      senderIsOwner: params.senderIsOwner,
+    });
     let continuityBundle:
       | import("../../../memory/continuity-bundle.js").ContinuityBundle
       | undefined;
     let tactiSnapshot: import("../../../flourishing/tacti-state.js").TactiSnapshot | null = null;
     let fragmentationLine: string | undefined;
     let systemStateLine: string | undefined;
+    let contextHealthLine: string | undefined;
     let flourishingPromptConfig:
       | import("../../flourishing-response-shaping.js").FlourishingPromptConfig
       | undefined;
-    if (includeFlourishingContext) {
-      await writeFragmentationAssessment(effectiveWorkspace).catch(() => undefined);
-      const [memoryManagerResult, nextTactiSnapshot, systemState] = await Promise.all([
-        params.config
-          ? getMemorySearchManager({
-              cfg: params.config,
-              agentId: sessionAgentId,
-            }).catch(() => ({ manager: null }))
-          : Promise.resolve({ manager: null }),
-        readTactiSnapshot(effectiveWorkspace).catch(() => null),
-        assembleSystemState(effectiveWorkspace).catch(() => null),
-      ]);
-      tactiSnapshot = nextTactiSnapshot;
-      const memoryManager = memoryManagerResult.manager;
-      continuityBundle = await assembleContinuityBundle({
-        workspaceDir: effectiveWorkspace,
-        query: params.prompt,
-        memoryManager: memoryManager
-          ? {
-              searchKeyword: async (query: string) =>
-                await memoryManager.search(query, { maxResults: 3 }),
+    if (flourishingContext.mode !== "disabled") {
+      const contextIssues: string[] = [];
+      if (flourishingContext.mode === "full-owner") {
+        try {
+          await writeFragmentationAssessment(effectiveWorkspace);
+        } catch (err) {
+          const message = describeUnknownError(err);
+          contextIssues.push("Fragmentation assessment refresh failed.");
+          log.warn(
+            `embedded context: fragmentation refresh failed sessionId=${params.sessionId} sessionKey=${params.sessionKey ?? ""} channel=${runtimeChannel ?? "unknown"} error=${message}`,
+          );
+        }
+
+        let memoryManager: Awaited<ReturnType<typeof getMemorySearchManager>>["manager"] | null =
+          null;
+        if (params.config) {
+          try {
+            memoryManager = (
+              await getMemorySearchManager({
+                cfg: params.config,
+                agentId: sessionAgentId,
+              })
+            ).manager;
+            if (!memoryManager) {
+              contextIssues.push("Semantic recall manager was unavailable for this turn.");
             }
-          : undefined,
-      }).catch(() => undefined);
-      fragmentationLine = systemState
-        ? (buildFragmentationPromptLine(systemState) ?? undefined)
-        : undefined;
-      systemStateLine = systemState
-        ? (buildSystemStateDigest(systemState) ?? undefined)
-        : undefined;
+          } catch (err) {
+            const message = describeUnknownError(err);
+            contextIssues.push("Semantic recall manager was unavailable for this turn.");
+            log.warn(
+              `embedded context: memory manager unavailable sessionId=${params.sessionId} sessionKey=${params.sessionKey ?? ""} channel=${runtimeChannel ?? "unknown"} error=${message}`,
+            );
+          }
+        }
+
+        try {
+          tactiSnapshot = await readTactiSnapshot(effectiveWorkspace);
+          if (tactiSnapshot?.stale) {
+            contextIssues.push("TACTI snapshot is stale; live relational signals were withheld.");
+          } else if (!tactiSnapshot) {
+            contextIssues.push("TACTI snapshot was unavailable for this turn.");
+          }
+        } catch (err) {
+          const message = describeUnknownError(err);
+          tactiSnapshot = null;
+          contextIssues.push("TACTI snapshot was unavailable for this turn.");
+          log.warn(
+            `embedded context: tacti snapshot unavailable sessionId=${params.sessionId} sessionKey=${params.sessionKey ?? ""} channel=${runtimeChannel ?? "unknown"} error=${message}`,
+          );
+        }
+
+        try {
+          const systemState = await assembleSystemState(effectiveWorkspace);
+          fragmentationLine = systemState
+            ? (buildFragmentationPromptLine(systemState) ?? undefined)
+            : undefined;
+          systemStateLine = systemState
+            ? (buildSystemStateDigest(systemState) ?? undefined)
+            : undefined;
+          if (!systemStateLine && !fragmentationLine) {
+            contextIssues.push("System-state digest was unavailable for this turn.");
+          }
+        } catch (err) {
+          const message = describeUnknownError(err);
+          contextIssues.push("System-state digest was unavailable for this turn.");
+          log.warn(
+            `embedded context: system state unavailable sessionId=${params.sessionId} sessionKey=${params.sessionKey ?? ""} channel=${runtimeChannel ?? "unknown"} error=${message}`,
+          );
+        }
+
+        try {
+          continuityBundle = await assembleContinuityBundle({
+            workspaceDir: effectiveWorkspace,
+            query: params.prompt,
+            timeZone: userTimezone,
+            memoryManager: memoryManager
+              ? {
+                  searchKeyword: async (query: string) =>
+                    await memoryManager.search(query, { maxResults: 3 }),
+                }
+              : undefined,
+          });
+          if ((continuityBundle.issues ?? []).length > 0) {
+            contextIssues.push(...(continuityBundle.issues ?? []));
+          }
+        } catch (err) {
+          const message = describeUnknownError(err);
+          contextIssues.push("Continuity bundle assembly failed for this turn.");
+          log.warn(
+            `embedded context: continuity bundle failed sessionId=${params.sessionId} sessionKey=${params.sessionKey ?? ""} channel=${runtimeChannel ?? "unknown"} error=${message}`,
+          );
+        }
+      } else {
+        continuityBundle = {
+          entries: [],
+          assembledAt: new Date().toISOString(),
+          confidence: "minimal",
+          timeZone: userTimezone,
+          issues: flourishingContext.reasons.map(
+            (reason) => `Owner-only continuity withheld on this Telegram surface: ${reason}.`,
+          ),
+        };
+      }
+
+      contextHealthLine = buildEmbeddedContextHealthSummary({
+        mode: flourishingContext.mode,
+        reasons: flourishingContext.reasons,
+        issues: contextIssues,
+      });
+      if (
+        contextHealthLine &&
+        (flourishingContext.mode !== "full-owner" || contextIssues.length > 0)
+      ) {
+        log.warn(
+          `embedded context degraded: sessionId=${params.sessionId} sessionKey=${params.sessionKey ?? ""} channel=${runtimeChannel ?? "unknown"} mode=${flourishingContext.mode} summary=${contextHealthLine}`,
+        );
+      }
       flourishingPromptConfig = {
         enabled: true,
         meaningDensity: { enabled: true, executionMinScore: 2 },
@@ -1750,7 +1983,7 @@ export async function runEmbeddedAttempt(
         repairLoop: { enabled: true },
         liveSignals: {
           continuityConfidence: continuityBundle?.confidence,
-          tactiSnapshot,
+          tactiSnapshot: tactiSnapshot?.stale ? null : tactiSnapshot,
         },
       };
     }
@@ -1777,6 +2010,8 @@ export async function runEmbeddedAttempt(
       promptMode,
       acpEnabled: params.config?.acp?.enabled !== false,
       runtimeInfo,
+      conversationContext,
+      contextHealthLine,
       messageToolHints,
       sandboxInfo,
       tools: effectiveTools,

@@ -4,10 +4,13 @@ import { appendBootstrapPromptWarning } from "../../bootstrap-budget.js";
 import { resolveOllamaBaseUrlForRun } from "../../ollama-stream.js";
 import { buildAgentSystemPrompt } from "../../system-prompt.js";
 import {
+  buildEmbeddedContextHealthSummary,
+  buildEmbeddedConversationContext,
   buildAfterTurnRuntimeContext,
   composeSystemPromptWithHookContext,
   isOllamaCompatProvider,
   prependSystemPromptAddition,
+  resolveEmbeddedFlourishingContextMode,
   resolveAttemptFsWorkspaceOnly,
   resolveOllamaCompatNumCtxEnabled,
   resolvePromptBuildHookResult,
@@ -1093,6 +1096,119 @@ describe("shouldInjectOllamaCompatNumCtx", () => {
         providerId: "ollama",
       }),
     ).toBe(false);
+  });
+});
+
+describe("buildEmbeddedConversationContext", () => {
+  it("describes Telegram supergroup topics explicitly", () => {
+    expect(
+      buildEmbeddedConversationContext({
+        runtimeChannel: "telegram",
+        groupId: "-1001234567890",
+        messageTo: "telegram:group:-1001234567890:topic:42",
+        messageThreadId: 42,
+      }),
+    ).toEqual({
+      surface: "telegram",
+      kind: "supergroup topic",
+      topic: 42,
+      shared: true,
+      direct: false,
+      conversationId: "telegram:group:-1001234567890:topic:42",
+    });
+  });
+
+  it("describes Telegram direct messages without inventing group context", () => {
+    expect(
+      buildEmbeddedConversationContext({
+        runtimeChannel: "telegram",
+        messageTo: "telegram:dm:8159253715",
+      }),
+    ).toEqual({
+      surface: "telegram",
+      kind: "direct",
+      shared: false,
+      direct: true,
+      conversationId: "telegram:dm:8159253715",
+    });
+  });
+});
+
+describe("resolveEmbeddedFlourishingContextMode", () => {
+  it("keeps full owner context for Telegram owner DMs", () => {
+    expect(
+      resolveEmbeddedFlourishingContextMode({
+        promptMode: "full",
+        trigger: "user",
+        runtimeChannel: "telegram",
+        senderIsOwner: true,
+      }),
+    ).toEqual({ mode: "full-owner", reasons: [] });
+  });
+
+  it("downgrades Telegram shared surfaces to shared-safe context instead of disabling", () => {
+    expect(
+      resolveEmbeddedFlourishingContextMode({
+        promptMode: "full",
+        trigger: "user",
+        runtimeChannel: "telegram",
+        groupId: "-1001234567890",
+        senderIsOwner: true,
+      }),
+    ).toEqual({
+      mode: "shared-safe",
+      reasons: ["shared Telegram surface"],
+    });
+  });
+
+  it("downgrades unverified Telegram DMs to shared-safe context", () => {
+    expect(
+      resolveEmbeddedFlourishingContextMode({
+        promptMode: "full",
+        trigger: "user",
+        runtimeChannel: "telegram",
+        senderIsOwner: false,
+      }),
+    ).toEqual({
+      mode: "shared-safe",
+      reasons: ["sender not owner-verified"],
+    });
+  });
+
+  it("preserves non-Telegram owner gating behavior", () => {
+    expect(
+      resolveEmbeddedFlourishingContextMode({
+        promptMode: "full",
+        trigger: "user",
+        runtimeChannel: "slack",
+        senderIsOwner: false,
+      }),
+    ).toEqual({
+      mode: "disabled",
+      reasons: ["sender not owner-verified"],
+    });
+  });
+});
+
+describe("buildEmbeddedContextHealthSummary", () => {
+  it("summarizes shared-safe context downgrades and issues", () => {
+    expect(
+      buildEmbeddedContextHealthSummary({
+        mode: "shared-safe",
+        reasons: ["shared Telegram surface", "sender not owner-verified"],
+        issues: ["Semantic recall unavailable"],
+      }),
+    ).toBe(
+      "shared-safe context; shared Telegram surface; sender not owner-verified; Semantic recall unavailable",
+    );
+  });
+
+  it("omits a health line for clean full-owner context", () => {
+    expect(
+      buildEmbeddedContextHealthSummary({
+        mode: "full-owner",
+      }),
+    ).toBeUndefined();
   });
 });
 

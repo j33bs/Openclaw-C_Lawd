@@ -51,6 +51,31 @@ describe("buildContinuityPromptSection", () => {
     expect(section).toContain("Recent daily notes and pinned doctrine were not found");
   });
 
+  it("renders recall health details when the bundle reports issues", () => {
+    const section = buildContinuityPromptSection({
+      confidence: "partial",
+      assembledAt: "2026-03-25T00:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+      issues: [
+        "Semantic recall was unavailable for this turn; using local continuity only.",
+        "Pinned doctrine was not found.",
+      ],
+      entries: [
+        {
+          kind: "daily-note",
+          source: "memory/2026-03-25.md",
+          date: "2026-03-25",
+          content: "# Today\n- keep the bundle honest\n",
+        },
+      ],
+    });
+
+    expect(section).toContain("Timezone: America/Los_Angeles.");
+    expect(section).toContain("### Recall Health");
+    expect(section).toContain("Semantic recall was unavailable for this turn");
+    expect(section).toContain("Pinned doctrine was not found.");
+  });
+
   it("does not crash on empty entries", () => {
     const section = buildContinuityPromptSection({
       confidence: "full",
